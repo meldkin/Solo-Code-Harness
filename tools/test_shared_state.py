@@ -7,6 +7,7 @@ import tempfile
 import threading
 from pathlib import Path
 
+from tools import shared_state
 from tools.shared_state import SharedState
 
 
@@ -71,6 +72,92 @@ def test_lock_conflict():
         with SharedState(path) as state:
             assert state.acquire_lock("src/auth.py", engine="kilo", model="deepseek") is True
             assert state.acquire_lock("src/auth.py", engine="copilot", model="gpt-4o") is False
+
+
+def test_directory_lock_conflicts_with_contained_file_lock():
+    """A delegated directory scope cannot overlap another engine's file edit."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / "shared-state.db"
+        with SharedState(path) as state:
+            assert state.acquire_directory_lock("src", engine="gemini", model="flash") is True
+            assert state.acquire_lock("src/auth.py", engine="copilot", model="gpt-4o") is False
+
+
+def test_file_lock_blocks_containing_directory_lock():
+    """Directory locking also detects a pre-existing nested file lock."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / "shared-state.db"
+        with SharedState(path) as state:
+            assert state.acquire_lock("src/auth.py", engine="copilot", model="gpt-4o") is True
+            assert state.acquire_directory_lock("src", engine="gemini", model="flash") is False
+
+
+def test_root_directory_lock_conflicts_with_all_paths():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / "shared-state.db"
+        with SharedState(path) as state:
+            assert state.acquire_directory_lock(".", engine="gemini", model="flash", session_id="a") is True
+            assert state.acquire_lock("src/auth.py", engine="copilot", model="gpt", session_id="b") is False
+
+
+def test_same_engine_different_sessions_conflict():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / "shared-state.db"
+        with SharedState(path) as state:
+            assert state.acquire_directory_lock("src", engine="gemini", model="flash", session_id="a") is True
+            assert state.acquire_directory_lock("src", engine="gemini", model="flash", session_id="b") is False
+
+
+def test_stale_session_cannot_release_newer_lock():
+    """A worker whose lock expired must not evict the newer holder's lock."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / "shared-state.db"
+        with SharedState(path) as state:
+            assert state.acquire_directory_lock("src", engine="gemini", model="m", session_id="old") is True
+            with state._transaction():
+                state._conn.execute(
+                    "UPDATE active_locks SET expires_at = '1970-01-01T00:00:00+00:00'"
+                )
+            assert state.acquire_directory_lock("src", engine="gemini", model="m", session_id="new") is True
+
+            state.release_directory_lock("src", engine="gemini", session_id="old")
+
+            locks = state.get_active_locks()
+            assert [lock["locked_by"]["session_id"] for lock in locks] == ["new"]
+
+
+def test_release_accepts_legacy_unnormalised_key():
+    """A row stored before key normalisation still releases with the same raw key."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / "shared-state.db"
+        with SharedState(path) as state:
+            with state._transaction():
+                state._conn.execute(
+                    "INSERT INTO active_locks (path, engine, model, session_id, locked_at,"
+                    " expires_at, reason) VALUES (?, 'claude', 'm', '', '2026-01-01T00:00:00+00:00',"
+                    " '2099-01-01T00:00:00+00:00', 'legacy')",
+                    ("src\\a.py",),
+                )
+
+            state.release_lock("src\\a.py", engine="claude")
+
+            assert state.get_active_locks() == []
+
+
+def test_case_folding_treats_slash_and_case_variants_as_one_lock(monkeypatch):
+    """On a case-insensitive filesystem, spelling differences still collide."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / "shared-state.db"
+        monkeypatch.setattr(shared_state, "_CASE_INSENSITIVE_PATHS", True)
+        with SharedState(path) as state:
+            assert state.acquire_directory_lock("Src", engine="gemini", model="flash") is True
+            assert state.acquire_lock("src/auth.py", engine="copilot", model="gpt") is False
+
+
+def test_case_folding_is_off_on_case_sensitive_filesystems(monkeypatch):
+    monkeypatch.setattr(shared_state, "_CASE_INSENSITIVE_PATHS", False)
+    assert shared_state._lock_paths_conflict("dir:src", "Src/a.py") is False
+
 
 
 def test_release_lock():

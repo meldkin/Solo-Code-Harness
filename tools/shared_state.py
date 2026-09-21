@@ -41,6 +41,59 @@ MAX_SESSION_LOG_ROWS = 1000
 VALID_ENGINES = ("kilo", "opencode", "claude", "copilot", "gemini", "codex")
 VALID_STATUSES = ("not-started", "in-progress", "completed", "blocked")
 
+
+# Windows resolves paths case-insensitively, so two workers that spell the same
+# directory differently must still collide on one lock key.
+_CASE_INSENSITIVE_PATHS = sys.platform == "win32"
+
+
+def _fold_case(value: str) -> str:
+    """Lowercase a lock key on a case-insensitive filesystem."""
+    return value.lower() if _CASE_INSENSITIVE_PATHS else value
+
+
+def _normalise_lock_path(path: str) -> str:
+    """Return a portable relative lock key without changing directory markers."""
+    if path.startswith("dir:"):
+        value = path[4:].replace("\\", "/").strip("/")
+        value = "." if value in ("", ".") else value
+        return _fold_case("dir:" + value)
+    return _fold_case(path.replace("\\", "/").strip("/"))
+
+
+def _directory_lock_path(path: str) -> str:
+    """Encode directory locks in the existing path-keyed table."""
+    normalised = _normalise_lock_path(path)
+    return normalised if normalised.startswith("dir:") else "dir:" + normalised
+
+
+def _lock_paths_conflict(left: str, right: str) -> bool:
+    """Return whether file or directory lock keys overlap in the workspace."""
+    left = _normalise_lock_path(left)
+    right = _normalise_lock_path(right)
+    left_is_dir = left.startswith("dir:")
+    right_is_dir = right.startswith("dir:")
+    left_path = left[4:] if left_is_dir else left
+    right_path = right[4:] if right_is_dir else right
+    if left_is_dir and left_path == ".":
+        left_path = ""
+    if right_is_dir and right_path == ".":
+        right_path = ""
+    if not left_is_dir and not right_is_dir:
+        return left_path == right_path
+    if left_is_dir and right_is_dir:
+        if not left_path or not right_path:
+            return True
+        return (
+            left_path == right_path
+            or left_path.startswith(right_path + "/")
+            or right_path.startswith(left_path + "/")
+        )
+    directory, file_path = (left_path, right_path) if left_is_dir else (right_path, left_path)
+    if not directory:
+        return True
+    return file_path == directory or file_path.startswith(directory + "/")
+
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
@@ -292,14 +345,17 @@ class SharedState:
         self, path: str, *, engine: str, model: str, session_id: str = "", reason: str = ""
     ) -> bool:
         """Atomically acquire a lock. Returns False if another engine already holds it."""
+        path = _normalise_lock_path(path)
         now = datetime.now(timezone.utc)
         expires = now + timedelta(hours=LOCK_TIMEOUT_HOURS)
         with self._transaction():
             self._expire_locks()
-            row = self._conn.execute(
-                "SELECT engine FROM active_locks WHERE path = ?", (path,)
-            ).fetchone()
-            if row and row[0] != engine:
+            rows = self._conn.execute("SELECT path, engine, session_id FROM active_locks").fetchall()
+            if any(
+                (owner != engine or owner_session != session_id)
+                and _lock_paths_conflict(path, existing)
+                for existing, owner, owner_session in rows
+            ):
                 return False  # Held by a different engine — conflict
             self._conn.execute(
                 """
@@ -314,11 +370,48 @@ class SharedState:
             )
             return True
 
-    def release_lock(self, path: str, *, engine: str) -> None:
+    def acquire_directory_lock(
+        self, path: str, *, engine: str, model: str, session_id: str = "", reason: str = ""
+    ) -> bool:
+        """Lock a directory, conflicting with every locked path it contains."""
+        return self.acquire_lock(
+            _directory_lock_path(path),
+            engine=engine,
+            model=model,
+            session_id=session_id,
+            reason=reason,
+        )
+
+    def release_lock(self, path: str, *, engine: str, session_id: str = "") -> None:
+        """Release a lock held by ``engine``.
+
+        Keys are compared after normalisation so a row written by an earlier
+        (non-normalising) build is still releasable. When ``session_id`` is
+        given, only that session's row is deleted: a stale worker must not evict
+        a newer holder of the same engine and path.
+        """
+        target = _normalise_lock_path(path)
         with self._transaction():
-            self._conn.execute(
-                "DELETE FROM active_locks WHERE path = ? AND engine = ?", (path, engine)
-            )
+            rows = self._conn.execute(
+                "SELECT path, engine, session_id FROM active_locks"
+            ).fetchall()
+            stale = [
+                stored
+                for stored, owner, owner_session in rows
+                if owner == engine
+                and _normalise_lock_path(stored) == target
+                and (not session_id or owner_session == session_id)
+            ]
+            for stored in stale:
+                self._conn.execute("DELETE FROM active_locks WHERE path = ?", (stored,))
+
+    def release_directory_lock(
+        self, path: str, *, engine: str, session_id: str = ""
+    ) -> None:
+        """Release a directory lock acquired by :meth:`acquire_directory_lock`."""
+        self.release_lock(
+            _directory_lock_path(path), engine=engine, session_id=session_id
+        )
 
     def get_active_locks(self) -> list[dict[str, Any]]:
         self._expire_locks()

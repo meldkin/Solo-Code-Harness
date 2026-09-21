@@ -48,6 +48,12 @@ High-signal context loaded at session start. Detailed history belongs in
 - [gotcha] `.pytest_temp` cleanup can race on Windows; rerun pytest if needed.
 
 ## Decisions
+- [decision] Antigravity uses `agy.exe` through `tools/antigravity_delegate.py`.
+  Writes require `--auto-approve` plus `--allow-dir`; `--allow-dir .` is rejected,
+  directory locks conflict across engines and across sessions of the same engine,
+  and the snapshot ignores root-level `.venv`/`node_modules`/`.pytest_temp*`/caches
+  plus root `build`/`dist` only. The post-run check is an audit of `--target-dir`,
+  not a sandbox. GUI inbox/outbox remains a fallback for UI-only work (2026-09-21).
 - [decision] Claude launchers default to full mode; `--bare` is explicit
   degraded mode.
 - [decision] OpenCode avoids duplicate skill mirrors and uses Claude-compatible

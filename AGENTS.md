@@ -244,25 +244,27 @@ gate closed.
 
 ### Choosing a worker engine (routing table)
 
-Two workers are available. Propose one **proactively** when the work fits —
+Three workers are available. Propose one **proactively** when the work fits —
 the user should not have to remember they exist. `session_start.py` announces
 each engine's availability at session start; treat that as a prompt to
 consider delegation, not an instruction to always delegate.
 
 | Work shape | Route to | Why |
 |---|---|---|
-| Read >5 files, then summarize/compare/audit | **Gemini** | ~20x context leverage (measured: 49.6k tokens of reading for ~2.5k of ours) |
-| Repo-wide survey — "where else does X appear?" | **Gemini** | Breadth is exactly its edge |
-| Independent review of a design or diff | **Gemini** | A second model catches different things |
-| UI verification, screenshots, recordings | **Gemini** | The orchestrator cannot do this at all |
+| Read >5 files, then summarize/compare/audit | **Antigravity CLI** | Large context through a headless worker |
+| Repo-wide survey — "where else does X appear?" | **Antigravity CLI** | Breadth is exactly its edge |
+| Independent review of a design or diff | **Antigravity CLI** | A second model catches different things |
+| UI verification, screenshots, recordings | **Antigravity GUI handoff** | The CLI cannot verify a rendered UI |
 | Small mechanical edit, boilerplate, one test | **OpenCode CLI** | Headless — costs the user nothing |
-| Scoped code writing behind an explicit fence | Gemini if broad, OpenCode CLI if narrow | Both need the fence stated in writing |
+| Scoped code writing behind an explicit fence | Antigravity CLI if broad, OpenCode CLI if narrow | Both need the fence stated in writing |
 | Architecture / product / security decisions | **Neither — do it here** | Judgment is not delegable |
 | Anything needing this conversation's history | **Neither — do it here** | Both workers are context-blind |
 
-**The asymmetry that matters**: OpenCode CLI and Kilo CLI are both headless, so delegating to them costs
-the user nothing — just do it. OpenCode CLI is the primary executor (tools/opencode_delegate.py, DeepSeek V4 Pro, reasoning + cache tracking); Kilo CLI is fallback. Gemini requires the user to relay the task
-manually through the Antigravity IDE, so **propose and wait for a yes**.
+OpenCode CLI, Kilo CLI, and Antigravity CLI are headless. OpenCode CLI is the
+primary narrow executor; Antigravity CLI handles read-heavy or broad scopes via
+`tools/antigravity_delegate.py`. Writes require `--auto-approve` and an explicit
+`--allow-dir`; the wrapper takes a shared-state directory lock and checks the
+post-run workspace scope. Antigravity GUI handoff remains a fallback for UI work.
 
 **Verification is mandatory for both.** Every controlled test of both engines
 produced at least one error invisible in their own self-summary. Their
@@ -271,10 +273,29 @@ run the real gates, and mutation-test any new check they write.
 
 Full decision guide: `.kilo/skill/gemini-delegation/SKILL.md`.
 
-### Delegating a task to Gemini/Antigravity (manual handoff)
+### Delegating to Antigravity CLI
 
-Antigravity IDE has no headless CLI (verified: only GUI window/diff flags,
-no prompt-execution subcommand) — a human must relay tasks to it manually.
+Use the wrapper for normal headless work:
+
+```powershell
+# Read-only: no permission-skipping flag is sent.
+python tools/antigravity_delegate.py "<task>" --model gemini-3.8-flash-medium
+
+# Write: explicit scope and opt-in auto approval are both required.
+python tools/antigravity_delegate.py "<task>" --allow-dir src --auto-approve --model gemini-3.8-flash-high
+```
+
+The orchestrator must still inspect `git diff` and run the relevant tests,
+security scan, and checklist. Never use `--no-guardrail` with `--auto-approve`.
+The post-run scope check audits `--target-dir` only: it cannot see writes outside
+that directory and cannot undo a write. `--auto-approve` still passes
+`--dangerously-skip-permissions` to `agy.exe`, so `--allow-dir` is the fence, not
+a sandbox.
+
+### Delegating to Antigravity GUI (manual fallback)
+
+Use this path only when the GUI is required, such as visual verification. A human
+must relay the task to the Antigravity IDE manually.
 To minimize copy-paste, use the file-based handoff protocol instead of
 pasting plan/result text through chat:
 
@@ -308,12 +329,9 @@ pasting plan/result text through chat:
 files in scope — Gemini edits the same working tree concurrently, and
 `acquire_lock()` returns `False` on a cross-engine conflict.
 
-**Do not re-investigate headless access.** Both routes are verified dead
-ends: the `google-antigravity` SDK authenticates only via `GEMINI_API_KEY`
-or Vertex+ADC (no OAuth, so it cannot reuse the IDE's Pro login), and
-`antigravity-ide chat` only drives the GUI — exit 0, empty stdout. The Pro
-plan quota is reachable only through the IDE, and the IDE only through a
-human.
+`google-antigravity` SDK and `antigravity-ide chat` remain unsuitable for this
+workflow. Use the verified `agy.exe --print --output-format stream-json` path
+through `tools/antigravity_delegate.py` instead.
 
 ## Git Commit Convention
 

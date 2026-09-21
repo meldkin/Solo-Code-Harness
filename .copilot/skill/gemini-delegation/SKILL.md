@@ -1,27 +1,27 @@
 ---
 name: gemini-delegation
-description: Routes read-heavy work (wide audits, multi-file surveys, independent review, UI verification) to Gemini via the Antigravity IDE using the file-based inbox/outbox handoff. Use when a task requires reading many files, when surveying or auditing a whole repo, when a second independent opinion is wanted, when verifying UI behavior, or when optimizing context/token cost on a read-heavy subtask.
+description: Routes read-heavy work and broad scoped changes to Gemini through the Antigravity headless CLI. Use GUI handoff only for rendered UI verification.
 ---
 
-# Gemini/Antigravity Delegation — Human-Relayed Handoff
+# Gemini/Antigravity Delegation — Headless Worker
 
 ## Overview
 
-Claude Code is always the orchestrator. Gemini runs inside the Antigravity
-IDE, which has **no headless CLI** — `antigravity-ide chat` only drives the
-running GUI and returns empty stdout with exit 0, so there is no way to read
-a result back programmatically. Every delegation therefore costs the user one
-manual relay step: they open Antigravity and give Gemini a single instruction.
-
-Because of that cost, this is not a default. Propose it, state the payoff, and
-let the user decide.
+The orchestrator invokes `agy.exe` through `tools/antigravity_delegate.py`.
+Read-only tasks are the default. A write requires both `--auto-approve` and an
+explicit `--allow-dir`; the wrapper takes a directory lock, prepends a guardrail,
+and rejects a post-run scope violation. That check is an **audit of `--target-dir`
+only** — it cannot see writes outside it and cannot undo a write, and
+`--auto-approve` still passes `--dangerously-skip-permissions` to `agy.exe`.
+`--allow-dir` is the fence; this is not a sandbox. Review the diff and rerun all
+evidence: the worker report is not verification.
 
 The payoff is real and measured. On a repo-wide audit (2026-07-26) Gemini read
 25 files / 194 KB (~49,600 tokens) while this orchestrator spent ~2,500 tokens
 writing the brief and verifying the result — roughly **95% saving, ~20x
 leverage**. That ratio is the entire reason the mechanism exists.
 
-## Why not the SDK or the API
+## Why not the SDK or IDE chat command
 
 Two dead ends, both verified — do not re-investigate without new information:
 
@@ -32,8 +32,8 @@ Two dead ends, both verified — do not re-investigate without new information:
 - **`antigravity-ide chat -m ask|edit|agent`**: exists, but only sends the
   prompt into the GUI. Exit 0, empty stdout, no readable result.
 
-The Gemini Pro *plan quota* — the thing that makes this cheap — is reachable
-**only** through the IDE, and the IDE is reachable only through a human.
+Use `agy.exe --print --output-format stream-json` instead. It returns structured
+events and works without the GUI.
 
 ## When to Delegate
 
@@ -60,16 +60,15 @@ Gemini earns its relay cost only on breadth.
 
 ## Invocation
 
-Write the brief, then hand the user exactly one line to relay.
+```powershell
+# Read-only task
+python tools/antigravity_delegate.py "<task>" --model gemini-3.8-flash-medium
 
-1. Write `.gemini/antigravity/handoff/inbox/<slug>-plan.md` (format:
-   `.gemini/antigravity/handoff/README.md`).
-2. Tell the user, verbatim:
-   > Open Antigravity, tell Gemini to read
-   > `.gemini/antigravity/handoff/inbox/<slug>-plan.md` and write its report to
-   > `.gemini/antigravity/handoff/outbox/<slug>-report.md`.
-3. `.claude/hooks/session_start.py` announces new `outbox/*-report.md` files at
-   the next session start.
+# Write task: narrow directory scope and explicit auto approval
+python tools/antigravity_delegate.py "<task>" --allow-dir src --auto-approve --model gemini-3.8-flash-high
+```
+
+Use `.gemini/antigravity/handoff/` only as a GUI fallback for UI verification.
 
 ## Writing the Brief — Four Rules Learned From Failures
 
@@ -131,9 +130,8 @@ self-assessment is not.** Never let a self-report substitute for a check.
 Gemini edits the same working tree at the same time as this session. Before
 delegating anything that **writes**:
 
-- Take a `tools/shared_state.py` lock for the files in scope; `acquire_lock()`
-  returns `False` on a cross-engine conflict.
-- Name every writable path in the brief and forbid everything else.
+- The wrapper takes a `tools/shared_state.py` directory lock; do not bypass it.
+- Name the writable directory with `--allow-dir` and forbid everything else.
 - Never delegate a write that overlaps a file being edited in this session.
 
 Gemini also keeps its own artifacts outside the repo at
@@ -151,5 +149,5 @@ channel. The report file in `outbox/` is.
 | Write a brief without an explicit writable-file list | Fence the scope; name every path it may touch |
 | Put the expected answer in the brief | Give the measurement command, not the number |
 | Let a correct-but-red gate look like failure | Predict the red gate in the brief and call it correct |
-| Delegate a write without a shared-state lock | `acquire_lock()` first; both engines share one tree |
-| Try the SDK or `antigravity-ide chat` for a headless run | Neither reaches the Pro plan; use the file handoff |
+| Delegate a write without `--allow-dir --auto-approve` | Use the wrapper's required scope and explicit opt-in |
+| Try the SDK or `antigravity-ide chat` for a headless run | Use `agy.exe` through the wrapper |

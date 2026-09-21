@@ -263,6 +263,7 @@ def generate_opencode_json(
             "*": "ask",
             "python .github/scripts/security_scan.py *": "allow",
             "python .github/scripts/checklist.py *": "allow",
+            "python tools/antigravity_delegate.py *": "ask",
             "git status*": "allow",
             "git diff*": "allow",
             "git log*": "allow",

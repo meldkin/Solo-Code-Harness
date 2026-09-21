@@ -562,30 +562,45 @@ delegation, not an instruction to always delegate.
 
 | Work shape | Route to | Why |
 |---|---|---|
-| Read >5 files, then summarize/compare/audit | **Gemini** | ~20x context leverage (measured) |
-| Repo-wide survey -- "where else does X appear?" | **Gemini** | Breadth is its edge |
-| Independent review of a design or diff | **Gemini** | A second model catches different things |
-| UI verification, screenshots, recordings | **Gemini** | The orchestrator cannot do this at all |
+| Read >5 files, then summarize/compare/audit | **Antigravity CLI** | Large context through a headless worker |
+| Repo-wide survey -- "where else does X appear?" | **Antigravity CLI** | Breadth is its edge |
+| Independent review of a design or diff | **Antigravity CLI** | A second model catches different things |
+| UI verification, screenshots, recordings | **Antigravity GUI handoff** | The CLI cannot verify a rendered UI |
 | Small mechanical edit, boilerplate, one test | **Kilo CLI** or **OpenCode CLI** | Both headless -- cost the user nothing |
-| Scoped code writing behind an explicit fence | Gemini if broad, Kilo/OpenCode if narrow | All three need the fence in writing |
+| Scoped code writing behind an explicit fence | Antigravity CLI if broad, Kilo/OpenCode if narrow | All three need the fence in writing |
 | Free model experimentation, cache tracking | **OpenCode CLI** | Has free models + reasoning/cache token breakdown |
 | Architecture / product / security decisions | **Neither -- do it here** | Judgment is not delegable |
 | Anything needing this conversation's history | **Neither -- do it here** | All workers are context-blind |
 
-Kilo CLI and OpenCode CLI are both headless, so delegating costs the user
-nothing -- just do it. OpenCode adds free models (`opencode/*-free`) and
-detailed token breakdown (reasoning + cache read/write). Gemini needs a manual
-relay through the Antigravity IDE, so **propose and wait for a yes**.
+Kilo CLI, OpenCode CLI, and Antigravity CLI are headless. Use
+`tools/antigravity_delegate.py` for broad scopes; writes require both
+`--allow-dir` and `--auto-approve`. The wrapper owns the directory lock and
+post-run scope check. Keep GUI handoff for rendered UI verification.
 
 **Verification is mandatory for all three.** Every controlled test of every
 engine produced an error invisible in its own self-summary. Their evidence
 is reliable; their self-assessment is not. Re-run their commands, run the
 real gates, and mutation-test any new check they write.
 
-## Delegating a task to Gemini/Antigravity (manual handoff)
+## Delegating to Antigravity CLI
 
-Antigravity IDE has no headless CLI -- a human must relay tasks to it
-manually. Use the file-based handoff protocol instead of pasting text:
+```bash
+# Read-only
+python tools/antigravity_delegate.py "<task>"
+
+# Scoped write
+python tools/antigravity_delegate.py "<task>" --allow-dir src --auto-approve
+```
+
+Inspect `git diff` and rerun the real gates after every worker run. The post-run
+scope check audits `--target-dir` only: it cannot see writes outside that
+directory and cannot undo a write. `--auto-approve` still passes
+`--dangerously-skip-permissions` to `agy.exe`, so `--allow-dir` is the fence, not
+a sandbox.
+
+## Antigravity GUI handoff fallback
+
+Use the file-based handoff protocol only when the task requires the GUI:
 1. Write the plan to `.gemini/antigravity/handoff/inbox/<slug>-plan.md`.
 2. Tell the user the one line to relay to Antigravity.
 3. `session_start.py` auto-detects new `outbox/*-report.md` files at the
@@ -603,13 +618,11 @@ Writing the brief -- four rules, each from an observed failure:
 4. **Give the measurement, never the answer** (`ls .kilo/skill | wc -l`,
    not "there are 51").
 
-Before delegating a **write**, take a `tools/shared_state.py` lock for the
-files in scope -- Gemini edits the same tree concurrently.
+For headless writes, do not bypass the wrapper's directory lock or guardrail.
 
-Do not re-investigate headless access: the `google-antigravity` SDK
-authenticates only via `GEMINI_API_KEY` or Vertex+ADC (no OAuth, cannot
-reuse the IDE's Pro login), and `antigravity-ide chat` only drives the GUI
-(exit 0, empty stdout). Full guide:
+The `google-antigravity` SDK and `antigravity-ide chat` remain unsuitable for
+this workflow. Use `agy.exe --print --output-format stream-json` through the
+wrapper. Full guide:
 `.claude/skills/gemini-delegation/SKILL.md`.
 
 

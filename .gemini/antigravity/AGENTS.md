@@ -169,10 +169,11 @@ Persistent memory at `.gemini/antigravity/knowledge/`. The AI reads Knowledge It
 
 ---
 
-## Claude Code Handoff Protocol (check at session start)
+## Headless CLI and GUI Handoff Fallback
 
-Claude Code cannot invoke Antigravity headlessly, so a human relays tasks
-manually. Check `.gemini/antigravity/handoff/inbox/` for `*-plan.md` files
+`tools/antigravity_delegate.py` is the default headless route for Antigravity
+tasks. The inbox/outbox protocol remains available when a GUI-only task needs a
+human relay. Check `.gemini/antigravity/handoff/inbox/` for `*-plan.md` files
 with `status: pending` in the frontmatter — these are tasks Claude Code
 delegated to you. Full protocol: `.gemini/antigravity/handoff/README.md`.
 
@@ -304,4 +305,3 @@ When operating with the **Gemini 3.8 Flash** model in Antigravity:
 ## Language
 
 When user speaks Vietnamese → respond in Vietnamese. Code comments and variable names remain in English.
-
