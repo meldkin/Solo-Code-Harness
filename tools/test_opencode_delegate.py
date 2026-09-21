@@ -35,6 +35,16 @@ def test_prefer_real_executable_resolves_npm_shim(tmp_path):
     assert opencode_delegate._prefer_real_executable(str(shim), platform="win32") == str(real)
 
 
+def test_prefer_real_executable_resolves_v2_npm_shim(tmp_path):
+    shim = tmp_path / "opencode.cmd"
+    shim.write_text("@echo off\n", encoding="utf-8")
+    real = tmp_path / "node_modules" / "@opencode" / "cli" / "bin" / "opencode.exe"
+    real.parent.mkdir(parents=True)
+    real.write_text("", encoding="utf-8")
+
+    assert opencode_delegate._prefer_real_executable(str(shim), platform="win32") == str(real)
+
+
 def test_prefer_real_executable_keeps_shim_without_wrapped_exe(tmp_path):
     shim = tmp_path / "opencode.cmd"
     shim.write_text("@echo off\n", encoding="utf-8")

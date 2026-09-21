@@ -77,6 +77,8 @@ def _stderr(msg: str) -> None:
 # first line) and can drop trailing flags like `--format json`. The shim wraps a
 # real executable; prefer that.
 _SHIM_WRAPPED_RELATIVE_PATHS = (
+    Path("node_modules") / "@opencode" / "cli" / "bin" / "opencode.exe",
+    Path("node_modules") / "@opencode" / "cli" / "bin" / "opencode",
     Path("node_modules") / "opencode-ai" / "bin" / "opencode.exe",
     Path("node_modules") / "opencode-ai" / "bin" / "opencode",
 )
