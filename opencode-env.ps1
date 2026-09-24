@@ -14,6 +14,11 @@
 
 $ErrorActionPreference = "Stop"
 
+# Ensure working directory is the project root containing .env
+if ($PSScriptRoot -and (Test-Path -LiteralPath (Join-Path $PSScriptRoot ".env"))) {
+    Set-Location $PSScriptRoot
+}
+
 $envFile = Join-Path (Get-Location) ".env"
 if (-not (Test-Path -LiteralPath $envFile)) {
     Write-Error "No .env found at $envFile. Run this launcher from the project root."

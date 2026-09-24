@@ -221,6 +221,19 @@ def main():
     else:
         print_warning("guard.py not found, skipping Guard Hook check")
 
+    # Python pytest suite under tools/
+    tools_dir = project_path / "tools"
+    if tools_dir.is_dir() and any(tools_dir.rglob("test_*.py")):
+        results.append(
+            run_check(
+                "Pytest",
+                [sys.executable, "-m", "pytest", str(tools_dir)],
+                timeout=120,
+            )
+        )
+    else:
+        print_warning("No tools/ test suite found, skipping pytest")
+
     if npm.exists():
         results.append(
             run_check("Tests", ["npm", "test", "--", "--passWithNoTests"], timeout=300)
