@@ -121,18 +121,21 @@ harness change required.
 
 ## Shared State (Cross-Engine, Local-Only)
 
-All 4 engines share a single SQLite file at `.solocode/shared-state.db` — **local-only, không commit git** (thư mục `.solocode/` đã bị `.gitignore` chặn):
+Hai file SQLite local-only, đều nằm trong `.solocode/` (đã bị `.gitignore` chặn):
 
-- **`features`** — status + ownership (not-started / in-progress / completed / blocked)
-- **`session_log`** — mỗi session được ghi lại: engine, model, files changed, verification (giữ tối đa 1000 dòng gần nhất)
-- **`active_locks`** — ngăn 2 engine sửa cùng 1 file cùng lúc (tự hết hạn sau 2 giờ)
-- **`shared_memory_*`** — conventions, gotchas, decisions dùng chung giữa các engine
+- **`.solocode/shared-state.db`** — nhật ký sự kiện đa engine + khoá file:
+  - **`session_log`** — mỗi session được ghi lại: engine, model, files changed, verification (giữ tối đa 1000 dòng gần nhất); ghi tự động bởi `pre_compact.py` (Claude) và `codex_session.py` (Codex).
+  - **`active_locks`** — ngăn 2 engine sửa cùng 1 file cùng lúc (tự hết hạn sau 2 giờ); do worker lấy/trả qua `acquire_lock`/`release_lock`.
+  - **`features`**, **`shared_memory_*`** — schema còn để tương thích ngược nhưng **không dùng** (không hook/engine nào gọi `set_feature_status()`). Task tracking dùng `git log` + `.kilo/memory/MEMORY.md`.
+- **`.solocode/sessions.db`** — vòng đời phiên (start/end/duration/files/status) cho analytics; ghi bởi `.claude/hooks/session_start.py` / `session_end.py` qua `tools/session_persistence.py`.
 
 ```bash
 python tools/shared_state.py show
-python tools/shared_state.py features
 python tools/shared_state.py locks
+python tools/session_persistence.py --list
 ```
+
+Bản đồ hai store và lý do tách vai trò: [`.kilo/instruction/shared-state.md`](.kilo/instruction/shared-state.md); biên bản nghiệm thu: [`docs/deepseek-harness-upgrade-acceptance.md`](docs/deepseek-harness-upgrade-acceptance.md).
 
 ## Gates
 
@@ -200,7 +203,7 @@ python tools/generate_harness.py --harness claude
 | Memory-gate hook | `.claude/hooks/memory_gate.py` | `PostToolUse` (Edit/Write) — caps `.claude/memory/*.md` size (WARN 4k / **hard-block 8k** chars) so memory never silently bloats every session's context; Python port of Kilo's `memory-manager.js` |
 | Security-post hook | `.claude/hooks/security_post.py` | `PostToolUse` (Bash) — scans `git diff` for secrets after commit/push |
 | Pre-compact hook | `.claude/hooks/pre_compact.py` | `PreCompact` — logs a git-state checkpoint to shared-state and reminds Claude to persist any settled decision to `.kilo/memory/MEMORY.md` before context is summarized/cleared |
-| Session hooks | `.claude/hooks/session_start.py`, `session_end.py` | `SessionStart`/`SessionEnd` — load git + cross-engine context; log session to shared-state |
+| Session hooks | `.claude/hooks/session_start.py`, `session_end.py` | `SessionStart`/`SessionEnd` — load git + cross-engine context; log session lifecycle to `.solocode/sessions.db` via `session_persistence.py` |
 
 The guard hook is a stdlib-only Python port of the Kilo `gate-guard.js`/`secret-scan.js`
 lifecycle hooks (33 destructive patterns + 21 secret patterns + protected config
