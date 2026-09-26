@@ -3,14 +3,16 @@
 > Auto-loaded at session start. Tất cả engine đọc/ghi `.solocode/shared-state.db` (SQLite).
 > File này KHÔNG được commit vào git — chỉ tồn tại local trên máy đang chạy các engine.
 
-## Cái gì đang thực sự chạy (đo 2026-07-28)
+## Cái gì đang thực sự chạy (snapshot 2026-09-26)
 
-Đừng tin mô tả, hãy tin số đo. Tại repo này, sau 9 ngày dùng thật:
+Đừng tin mô tả, hãy tin số đo — và **đo lại** bằng
+`python tools/shared_state.py show` trước khi dùng số liệu. Số dưới đây chỉ là
+một snapshot, sẽ cũ theo thời gian:
 
-| Bảng | Rows | Ai ghi |
+| Bảng | Rows (snapshot) | Ai ghi |
 |---|---:|---|
-| `session_log` | 350 | **Tự động** — `session_end.py` + `pre_compact.py` |
-| `active_locks` | 0 | Thủ công, chỉ khi delegate song song (xem dưới) |
+| `session_log` | 1000 | **Tự động** — `pre_compact.py` (Claude) + `codex_session.py` (Codex) |
+| `active_locks` | 1 | Writer lấy lock theo path; tự hết hạn sau `LOCK_TIMEOUT_HOURS` = 2 giờ |
 | `features` | 0 | Không ai — dùng git log + `MEMORY.md` thay thế |
 | `shared_memory_*` | 0 | Không ai — `MEMORY.md` đã làm việc này |
 
@@ -19,16 +21,30 @@ trong đó **0/9 bước thực sự được chạy**. Nó đã bị gỡ: mộ
 bắt buộc mà không gì kiểm chứng chỉ dạy agent tin vào thứ không có thật.
 
 ### Session start / end — không cần làm gì thủ công
-Hook lo phần này. `session_start.py` đọc `session_log` gần nhất để lấy
-bối cảnh; `session_end.py` và `pre_compact.py` ghi lại phiên. Đây là lý
-do `session_log` là bảng duy nhất có dữ liệu.
+Hook Claude lo phần này, nhưng ghi vào **hai store khác nhau** (xem bảng dưới).
+`session_start.py` đọc `.solocode/sessions.db` và bơm bối cảnh; `session_end.py`
+ghi vào `.solocode/sessions.db`; `pre_compact.py` ghi checkpoint vào
+`.solocode/shared-state.db` và nhắc ghi `.solocode/context-checkpoint.json`.
+
+### Hai SQLite store — đừng nhầm
+
+Repo có hai DB SQLite local-only với tên dễ lẫn. Chúng phục vụ mục đích khác nhau
+và **không** phải hai nguồn sự thật cho cùng một dữ liệu:
+
+| Store | Bảng | Writer | Reader | Mục đích |
+|---|---|---|---|---|
+| `.solocode/shared-state.db` | `session_log`, `active_locks`, `shared_memory_*` | `pre_compact.py`, `codex_session.py`, `codex_guard.py` (locks) | `tools/shared_state.py` CLI, `garden.py`, `test_integration.py` | Nhật ký sự kiện đa engine + khoá file |
+| `.solocode/sessions.db` | `sessions` | `.claude/hooks/session_start.py`, `session_end.py` (qua `session_persistence`) | `session_persistence.py`, `session_analytics.py`, `session_start.py` | Vòng đời phiên (start/end/duration/files/status) cho analytics |
+
+Quyết định (2026-09-26): **giữ song song, ghi rõ vai trò**, không hợp nhất khi chưa
+chứng minh consumer trùng — xem `docs/deepseek-harness-upgrade-acceptance.md`.
 
 ### Khi nào PHẢI dùng lock (còn giá trị)
-`active_locks` rỗng vì mới thêm (2026-07-26), **không phải vì bị bỏ**.
-Trước khi giao một tác vụ **ghi** cho worker chạy song song (Gemini/
-Antigravity sửa cùng cây thư mục), hãy lấy lock cho các file trong phạm
-vi — xem `acquire_lock` ở phần API bên dưới. Đây là cơ chế chống ghi đè
-duy nhất giữa các engine.
+`active_locks` thường rỗng; nó chỉ có row khi một writer đang giữ lock (hoặc khi
+một lock rò rỉ chưa hết hạn). Trước khi giao một tác vụ **ghi** cho worker chạy
+song song (Gemini/Antigravity sửa cùng cây thư mục), hãy lấy lock cho các file
+trong phạm vi — xem `acquire_lock` ở phần API bên dưới. Đây là cơ chế chống ghi
+đè duy nhất giữa các engine.
 
 ### `features` và `shared_memory_*` — schema còn, không dùng
 Giữ lại để tương thích ngược (`garden.py` cảnh báo feature `in-progress`

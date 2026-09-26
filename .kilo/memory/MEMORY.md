@@ -52,6 +52,13 @@ High-signal context loaded at session start. Detailed history belongs in
 - [gotcha] `.pytest_temp` cleanup can race on Windows; rerun pytest if needed.
 
 ## Decisions
+- [decision] Feature/task state stays out of SQLite: `features` and
+  `shared_memory_*` remain unused (no hook or engine calls
+  `set_feature_status()`). `AGENTS.md` was still mandating the old API —
+  requirement removed, API kept only for back-compat. Two session stores are
+  documented as distinct: `.solocode/shared-state.db` (session_log + locks;
+  writers `pre_compact.py`, `codex_session.py`) vs `.solocode/sessions.db`
+  (session lifecycle/analytics; Claude hooks). (2026-09-26)
 - [decision] Antigravity headless `agy.exe` delegate retired to eliminate
   automated bot traffic flags on user Google accounts. Antigravity workflow
   is restricted to manual GUI inbox/outbox handoff protocol (2026-09-26).

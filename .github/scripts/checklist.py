@@ -64,8 +64,15 @@ def print_error(text: str):
     print(f"{Colors.RED}[{SYM_BAD}] {text}{Colors.ENDC}")
 
 
-def run_check(name: str, command: list[str], timeout: int = 120) -> dict:
-    """Run a validation check and capture results."""
+def run_check(
+    name: str, command: list[str], timeout: int = 120, required: bool = True
+) -> dict:
+    """Run a validation check and capture results.
+
+    ``required`` separates a mandatory tool from an optional one. A missing
+    required tool is a FAILURE — the gate cannot verify what it claims to
+    verify — while a missing optional tool is a clean SKIP.
+    """
     print_step(f"Running: {name}")
     try:
         result = subprocess.run(
@@ -93,7 +100,10 @@ def run_check(name: str, command: list[str], timeout: int = 120) -> dict:
         print_error(f"{name}: TIMEOUT")
         return {"name": name, "passed": False, "output": "", "skipped": False}
     except FileNotFoundError:
-        print_warning(f"{name}: Tool not installed, skipping")
+        if required:
+            print_error(f"{name}: required tool not found on PATH")
+            return {"name": name, "passed": False, "output": "", "skipped": False}
+        print_warning(f"{name}: optional tool not installed, skipping")
         return {"name": name, "passed": True, "output": "", "skipped": True}
 
 
@@ -172,7 +182,10 @@ def main():
     if npm.exists():
         results.append(
             run_check(
-                "ESLint", ["npx", "eslint", ".", "--max-warnings", "0"], timeout=120
+                "ESLint",
+                ["npx", "eslint", ".", "--max-warnings", "0"],
+                timeout=120,
+                required=False,
             )
         )
     else:
@@ -236,7 +249,9 @@ def main():
 
     if npm.exists():
         results.append(
-            run_check("Tests", ["npm", "test", "--", "--passWithNoTests"], timeout=300)
+            run_check(
+                "Tests", ["npm", "test", "--", "--passWithNoTests"], timeout=300, required=False
+            )
         )
     else:
         print_warning("No package.json found, skipping npm tests")
@@ -244,7 +259,7 @@ def main():
     # P3: Build check
     print_header("P3: BUILD")
     if npm.exists():
-        results.append(run_check("Build", ["npm", "run", "build"], timeout=300))
+        results.append(run_check("Build", ["npm", "run", "build"], timeout=300, required=False))
 
     all_passed = print_summary(results)
     sys.exit(0 if all_passed else 1)

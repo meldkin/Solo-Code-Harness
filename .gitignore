@@ -56,6 +56,10 @@ Thumbs.db
 deepseek-harness-master/
 open-code-review-main/
 antigravity-sdk-python-main/
+# learn-harness-engineering-main/ is a reference checkout. Extra reason it
+# belongs here: ruff honours .gitignore, so without this entry `ruff check .`
+# lints the vendored course's Python files and fails the checklist gate.
+learn-harness-engineering-main/
 
 # Antigravity IDE custom root junction (mirrors .gemini/antigravity/skills locally)
 /.agents/skills/

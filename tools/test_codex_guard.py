@@ -17,6 +17,7 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -35,14 +36,42 @@ _ANTHROPIC_SECRET = "sk-ant-abcdefghijklmnopqrstuvwxyz0123"  # noqa: S105
 _QUOTED_SECRET = "sk-abcdefghijklmnopqrstuvwxyz123456"  # noqa: S105
 
 
-def _run(*args: str) -> subprocess.CompletedProcess[str]:
+def _run(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     """Invoke codex_guard, returning the completed process."""
+    merged = os.environ.copy()
+    if env:
+        merged.update(env)
     return subprocess.run(  # noqa: S603 — fixed argv, no shell
         [sys.executable, str(GUARD), *args],
         cwd=ROOT,
         capture_output=True,
         text=True,
+        env=merged,
     )
+
+
+def _norm(path: Path) -> str:
+    """Match shared_state._normalise_lock_path for lock-key comparison."""
+    return str(path).replace("\\", "/").strip("/").lower()
+
+
+def _active_lock_for(db: Path, path: Path) -> dict | None:
+    """Return the active lock row for ``path`` in the isolated DB, if any."""
+    from tools.shared_state import SharedState
+
+    with SharedState(db) as state:
+        for lock in state.get_active_locks():
+            if lock["path"] == _norm(path):
+                return lock
+    return None
+
+
+@pytest.fixture()
+def isolated_db(tmp_path: Path) -> Path:
+    """A throwaway shared-state DB so lock tests never touch production state."""
+    db = tmp_path / "state" / "shared-state.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    return db
 
 
 @pytest.mark.parametrize(
@@ -128,3 +157,81 @@ def test_write_without_path_is_rejected() -> None:
     assert result.returncode == 2
     assert "ERROR: --write requires --path" in result.stderr
 
+
+def test_write_releases_lock_on_success(tmp_path: Path, isolated_db: Path) -> None:
+    """A successful verified write must not leave its file lock behind."""
+    target = tmp_path / "subdir" / "out.txt"
+    env = {"CODEX_GUARD_STATE_DB": str(isolated_db)}
+    result = _run("--content", "hello", "--path", str(target), "--write", env=env)
+    assert result.returncode == 0, f"unexpectedly blocked: {result.stderr}"
+    assert _active_lock_for(isolated_db, target) is None
+
+
+def test_other_engine_lock_blocks_and_is_preserved(tmp_path: Path, isolated_db: Path) -> None:
+    """Another engine's lock blocks the write and must not be released by us."""
+    from tools.shared_state import SharedState
+
+    target = tmp_path / "subdir" / "out.txt"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with SharedState(isolated_db) as state:
+        assert state.acquire_lock(
+            str(target), engine="kilo", model="kilo-cli", session_id="other"
+        )
+    env = {"CODEX_GUARD_STATE_DB": str(isolated_db)}
+    result = _run("--content", "hello", "--path", str(target), "--write", env=env)
+    assert result.returncode == 2
+    assert "BLOCKED" in result.stderr
+    assert not target.exists()
+    lock = _active_lock_for(isolated_db, target)
+    assert lock is not None
+    assert lock["locked_by"]["engine"] == "kilo"
+
+
+def test_blocked_secret_does_not_acquire_lock(tmp_path: Path, isolated_db: Path) -> None:
+    """A secret block happens before the lock is taken, so no lock is left."""
+    target = tmp_path / "secret.txt"
+    env = {"CODEX_GUARD_STATE_DB": str(isolated_db)}
+    result = _run(
+        "--content", f'api_key = "{_QUOTED_SECRET}"', "--path", str(target), "--write", env=env
+    )
+    assert result.returncode == 2
+    assert "BLOCKED" in result.stderr
+    assert not target.exists()
+    assert _active_lock_for(isolated_db, target) is None
+
+
+def test_failed_write_releases_lock(tmp_path: Path, isolated_db: Path) -> None:
+    """If the write itself fails, the finally block must still release the lock."""
+    target = tmp_path / "adir"
+    target.mkdir()  # writing a file onto a directory fails after the lock is taken
+    env = {"CODEX_GUARD_STATE_DB": str(isolated_db)}
+    result = _run("--content", "hello", "--path", str(target), "--write", env=env)
+    assert result.returncode != 0
+    assert _active_lock_for(isolated_db, target) is None
+
+
+def test_overlapping_invocations_use_distinct_lock_owners(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A shared Codex session ID must not let invocations release each other's locks."""
+    from tools import codex_guard
+
+    owner_ids: list[str] = []
+
+    class FakeState:
+        def acquire_lock(self, _path: str, **kwargs: str) -> bool:
+            owner_ids.append(kwargs["session_id"])
+            return True
+
+        def release_lock(self, _path: str, **kwargs: str) -> None:
+            assert kwargs["session_id"] == owner_ids[-1]
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(codex_guard, "_state", FakeState)
+    monkeypatch.setenv("CODEX_SESSION_ID", "same-codex-session")
+    for _ in range(2):
+        monkeypatch.setattr(sys, "argv", [str(GUARD), "--content", "hello", "--path", "same.txt"])
+        assert codex_guard.main() == 0
+
+    assert len(owner_ids) == 2
+    assert len(set(owner_ids)) == 2

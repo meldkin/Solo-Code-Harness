@@ -168,25 +168,33 @@ Key enforcement points:
 ## Session State Lifecycle (shared state)
 
 Cross-engine session state lives in `.solocode/shared-state.db` (SQLite, local-only,
-never committed). All engines read/write it via `tools/shared_state.py`'s
-`SharedState` class. `.claude/hooks/session_start.py` / `session_end.py` already
-call this automatically — you rarely need to touch it by hand.
+never committed). Engines read/write it via `tools/shared_state.py`'s `SharedState`
+class. Claude Code hooks write to it automatically (`pre_compact.py` logs a
+compaction checkpoint); engines without a lifecycle hook call `tools/shared_state.py`
+directly (for example `tools/codex_session.py` for Codex).
+
+**Feature/task tracking is NOT in SQLite.** The `features` and `shared_memory_*`
+tables remain for backward compatibility but are unused: no hook or engine calls
+`set_feature_status()`. Track tasks with `git log` and record conventions, gotchas
+and decisions in `.kilo/memory/MEMORY.md`. `set_feature_status()` still exists as an
+API but is not part of the current workflow.
 
 ### Startup
 
-1. `session_start.py` reads current feature status + recent session log from
-   `.solocode/shared-state.db` and injects a summary into context.
-2. Pick exactly ONE `in-progress` feature (or promote one `not-started` to `in-progress`)
-   via `state.set_feature_status(...)`.
-3. Do NOT work on multiple features in one session.
+1. `session_start.py` injects a summary into context: git branch/sha/dirty count,
+   recent sessions, any unseen Gemini/Antigravity handoff report, and a PreCompact
+   recovery checkpoint (`.solocode/context-checkpoint.json`) if one was left.
+2. Read `git log --oneline -10` and `.kilo/memory/MEMORY.md` to see what is in
+   progress. Do not wait for an `in-progress` feature row — there is none.
 
 ### Wrap-Up (before ending session)
 
-1. **Update feature status**: `state.set_feature_status("feat-id", "completed", ..., evidence="...")`.
-2. **Log the session**: `state.add_session_entry(engine=..., model=..., summary="...")`
-   (newest entries are read first at next session start).
-3. `session_end.py` calls this automatically on Claude Code; other engines call
-   `tools/shared_state.py` directly if no lifecycle hook exists for that engine.
+1. **Log the session**: `state.add_session_entry(engine=..., model=..., summary="...")`
+   (newest entries are read first at next session start). `pre_compact.py` does this
+   automatically on Claude Code; other engines call `tools/shared_state.py` directly
+   if no lifecycle hook exists for that engine.
+2. **Record settled decisions** in `.kilo/memory/MEMORY.md`'s `## Decisions` section
+   (see the compaction section below).
 
 ### Context Compaction Continuity (CRITICAL — read this before/after any compaction)
 

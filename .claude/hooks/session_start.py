@@ -13,8 +13,10 @@ Wired via .claude/settings.json:
 Behavior (all best-effort, never blocks — always exits 0):
   - git branch / short SHA / dirty-file count
   - detected package manager (pnpm/yarn/bun/npm)
-  - up to 3 most recent shared-state sessions (any engine) if the local
-    SQLite state + tools/shared_state.py are available
+  - up to 3 most recent session records (any engine) from the local
+    `.solocode/sessions.db` via tools/session_persistence.py, if available
+    (this is a different store from `.solocode/shared-state.db`; see
+    `.kilo/instruction/shared-state.md` for the two-store map)
   - unseen Gemini/Antigravity handoff reports in
     .gemini/antigravity/handoff/outbox/ (see handoff/README.md) — tracked via
     a local-only "seen" marker at .solocode/gemini-handoff-seen.json so each
