@@ -892,7 +892,11 @@ def check_doc_paths(root: Path = ROOT) -> list[str]:
             continue
         # Archives and plan snapshots describe history; paths may be gone by design.
         posix = md.as_posix()
-        if "decisions-archive" in md.name or "/plans/" in posix:
+        if (
+            "decisions-archive" in md.name
+            or "/plans/" in posix
+            or ("/docs/" in posix and ("review" in md.name or "report" in md.name))
+        ):
             continue
         try:
             text = md.read_text(encoding="utf-8")

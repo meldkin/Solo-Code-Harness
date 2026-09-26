@@ -169,11 +169,10 @@ Persistent memory at `.gemini/antigravity/knowledge/`. The AI reads Knowledge It
 
 ---
 
-## Headless CLI and GUI Handoff Fallback
+## GUI Handoff Protocol
 
-`tools/antigravity_delegate.py` is the default headless route for Antigravity
-tasks. The inbox/outbox protocol remains available when a GUI-only task needs a
-human relay. Check `.gemini/antigravity/handoff/inbox/` for `*-plan.md` files
+Headless `agy.exe` has been retired. The inbox/outbox protocol is the primary
+route when a task is delegated to Antigravity IDE. Check `.gemini/antigravity/handoff/inbox/` for `*-plan.md` files
 with `status: pending` in the frontmatter — these are tasks Claude Code
 delegated to you. Full protocol: `.gemini/antigravity/handoff/README.md`.
 

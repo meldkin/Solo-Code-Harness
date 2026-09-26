@@ -100,3 +100,31 @@ def test_requires_an_input_mode() -> None:
     result = _run()
     assert result.returncode != 0
     assert "BLOCKED" not in result.stderr
+
+
+def test_write_benign_content_creates_file(tmp_path: Path) -> None:
+    """--write must write verified content to the target path."""
+    target = tmp_path / "subdir" / "test_out.txt"
+    content = "hello from verified codex write"
+    result = _run("--content", content, "--path", str(target), "--write")
+    assert result.returncode == 0, f"unexpectedly blocked: {result.stderr}"
+    assert "WROTE:" in result.stdout
+    assert target.exists()
+    assert target.read_text(encoding="utf-8") == content
+
+
+def test_write_secret_in_content_is_blocked(tmp_path: Path) -> None:
+    """--write must not write to disk when secrets are detected."""
+    target = tmp_path / "secret.txt"
+    result = _run("--content", f'api_key = "{_QUOTED_SECRET}"', "--path", str(target), "--write")
+    assert result.returncode == 2
+    assert "BLOCKED" in result.stderr
+    assert not target.exists()
+
+
+def test_write_without_path_is_rejected() -> None:
+    """--write requires --path."""
+    result = _run("--content", "benign", "--write")
+    assert result.returncode == 2
+    assert "ERROR: --write requires --path" in result.stderr
+

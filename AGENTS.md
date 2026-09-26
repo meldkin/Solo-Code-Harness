@@ -36,7 +36,7 @@ This project is powered by **Solo-Code Harness** — an AI agent discipline laye
 
 | If the file path starts with... | Then it is... | Action |
 |----------------------------------|---------------|--------|
-| `.kilo/`, `.copilot/`, `.gemini/`, `.claude/`, `.claude-plugin/`, `.opencode/`, `.agents/` | Harness engine | Rules/skills/hooks for AI behavior — not project logic |
+| `.kilo/`, `.copilot/`, `.gemini/`, `.claude/`, `.claude-plugin/`, `.opencode/`, `.agents/`, `.codex/` | Harness engine | Rules/skills/hooks for AI behavior — not project logic |
 | `.contracts/` | Harness sub-agent contracts | Status contracts for delegated agents |
 | `.github/`, `.vscode/`, `tools/` | **Shared** — harness *and* project | The harness ships files here, but the project also keeps its own CI workflows, `CODEOWNERS`, dependabot config, editor settings and dev scripts. Only the exact paths under `[shared_files]` in `.harness.lock` are harness; **everything else here is project code**. |
 | `AGENTS.md`, `agent.yaml`, `kilo.jsonc`, `opencode.json`, `.mcp.json`, `.ruff.toml`, `.gitleaks.toml`, `Makefile`, `claude-env.ps1`, `codex-env.ps1`, `opencode-env.ps1`, `init.sh`, `verify.sh`, `extensions_config.json`, `.harness.lock`, `.solocode/`, `.pre-commit-config.yaml`, `.github/pull_request_template.md`, `CLAUDE.md` | Harness config | Agent behavior configuration — not application config |
@@ -251,50 +251,29 @@ consider delegation, not an instruction to always delegate.
 
 | Work shape | Route to | Why |
 |---|---|---|
-| Read >5 files, then summarize/compare/audit | **Antigravity CLI** | Large context through a headless worker |
-| Repo-wide survey — "where else does X appear?" | **Antigravity CLI** | Breadth is exactly its edge |
-| Independent review of a design or diff | **Antigravity CLI** | A second model catches different things |
-| UI verification, screenshots, recordings | **Antigravity GUI handoff** | The CLI cannot verify a rendered UI |
+| Read >5 files, then summarize/compare/audit | **Antigravity GUI handoff** | Large context through Gemini in Antigravity IDE |
+| Repo-wide survey — "where else does X appear?" | **OpenCode CLI** | Headless survey with large context models |
+| Independent review of a design or diff | **Antigravity GUI handoff** | A second model catches different things |
+| UI verification, screenshots, recordings | **Antigravity GUI handoff** | Visual inspection in the rendered IDE UI |
 | Small mechanical edit, boilerplate, one test | **OpenCode CLI** | Headless — costs the user nothing |
-| Scoped code writing behind an explicit fence | Antigravity CLI if broad, OpenCode CLI if narrow | Both need the fence stated in writing |
+| Scoped code writing behind an explicit fence | **OpenCode CLI** | Requires explicit fence stated in writing |
 | Architecture / product / security decisions | **Neither — do it here** | Judgment is not delegable |
-| Anything needing this conversation's history | **Neither — do it here** | Both workers are context-blind |
+| Anything needing this conversation's history | **Neither — do it here** | Workers are context-blind |
 
-OpenCode CLI, Kilo CLI, and Antigravity CLI are headless. OpenCode CLI is the
-primary narrow executor; Antigravity CLI handles read-heavy or broad scopes via
-`tools/antigravity_delegate.py`. Writes require `--auto-approve` and an explicit
-`--allow-dir`; the wrapper takes a shared-state directory lock and checks the
-post-run workspace scope. Antigravity GUI handoff remains a fallback for UI work.
+OpenCode CLI and Kilo CLI are headless executors. Antigravity GUI handoff provides
+a manual relay protocol for UI verification, wide audits, or visual work via
+`.gemini/antigravity/handoff/`.
 
-**Verification is mandatory for both.** Every controlled test of both engines
+**Verification is mandatory.** Every controlled test of worker engines
 produced at least one error invisible in their own self-summary. Their
 evidence is reliable; their self-assessment is not. Re-run their commands,
 run the real gates, and mutation-test any new check they write.
 
 Full decision guide: `.kilo/skill/gemini-delegation/SKILL.md`.
 
-### Delegating to Antigravity CLI
-
-Use the wrapper for normal headless work:
-
-```powershell
-# Read-only: no permission-skipping flag is sent.
-python tools/antigravity_delegate.py "<task>" --model gemini-3.8-flash-medium
-
-# Write: explicit scope and opt-in auto approval are both required.
-python tools/antigravity_delegate.py "<task>" --allow-dir src --auto-approve --model gemini-3.8-flash-high
-```
-
-The orchestrator must still inspect `git diff` and run the relevant tests,
-security scan, and checklist. Never use `--no-guardrail` with `--auto-approve`.
-The post-run scope check audits `--target-dir` only: it cannot see writes outside
-that directory and cannot undo a write. `--auto-approve` still passes
-`--dangerously-skip-permissions` to `agy.exe`, so `--allow-dir` is the fence, not
-a sandbox.
-
 ### Delegating to Antigravity GUI (manual fallback)
 
-Use this path only when the GUI is required, such as visual verification. A human
+Use this path when GUI or visual verification is required. A human
 must relay the task to the Antigravity IDE manually.
 To minimize copy-paste, use the file-based handoff protocol instead of
 pasting plan/result text through chat:
@@ -329,9 +308,8 @@ pasting plan/result text through chat:
 files in scope — Gemini edits the same working tree concurrently, and
 `acquire_lock()` returns `False` on a cross-engine conflict.
 
-`google-antigravity` SDK and `antigravity-ide chat` remain unsuitable for this
-workflow. Use the verified `agy.exe --print --output-format stream-json` path
-through `tools/antigravity_delegate.py` instead.
+`agy.exe` headless execution has been retired to avoid automated traffic flags
+on Google accounts. For Antigravity tasks, use the GUI handoff protocol above.
 
 ## Git Commit Convention
 

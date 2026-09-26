@@ -34,7 +34,8 @@ High-signal context loaded at session start. Detailed history belongs in
 - [verify] Individual gates: security scan, schema validation, garden,
   no-skips, pytest.
 - [verify] Codex has no repository hook API, so use `tools/codex_guard.py` for
-  destructive-command, secret, and file-lock preflight checks.
+  destructive-command, secret, and file-lock preflight checks, or run
+  verified writes with `tools/codex_guard.py --write`.
 
 ## Gotchas
 - [gotcha] Bare Codex does not load `.env`; always run via the launcher.
@@ -42,18 +43,18 @@ High-signal context loaded at session start. Detailed history belongs in
   `unified_exec = false`, `wire_api = "responses"`, and a full-access sandbox.
 - [gotcha] Codex base URLs do not interpolate `${VAR}`; the launcher passes a
   `-c model_providers.<id>.base_url=...` override instead.
+- [gotcha] Codex CLI internal exec policy blocks `rm -f` / `-Force` patterns;
+  under `approval_policy = "never"` this aborts process creation. Avoid `-Force`
+  in PowerShell, or use `python tools/codex_guard.py --write`.
 - [gotcha] TOML bare keys must precede the first table header.
 - [gotcha] Keep loaded memory under 8,000 chars. MOVE pruned material into
   `decisions-archive.md` verbatim — never silently delete it.
 - [gotcha] `.pytest_temp` cleanup can race on Windows; rerun pytest if needed.
 
 ## Decisions
-- [decision] Antigravity uses `agy.exe` through `tools/antigravity_delegate.py`.
-  Writes require `--auto-approve` plus `--allow-dir`; `--allow-dir .` is rejected,
-  directory locks conflict across engines and across sessions of the same engine,
-  and the snapshot ignores root-level `.venv`/`node_modules`/`.pytest_temp*`/caches
-  plus root `build`/`dist` only. The post-run check is an audit of `--target-dir`,
-  not a sandbox. GUI inbox/outbox remains a fallback for UI-only work (2026-09-21).
+- [decision] Antigravity headless `agy.exe` delegate retired to eliminate
+  automated bot traffic flags on user Google accounts. Antigravity workflow
+  is restricted to manual GUI inbox/outbox handoff protocol (2026-09-26).
 - [decision] Claude launchers default to full mode; `--bare` is explicit
   degraded mode.
 - [decision] OpenCode avoids duplicate skill mirrors and uses Claude-compatible
@@ -62,3 +63,10 @@ High-signal context loaded at session start. Detailed history belongs in
   has no project hooks. Of the gateway's aliases only `gpt-5.6-terra` routes
   reproducibly; the rest are unstable or dead — measurements and traps are in
   `decisions-archive.md` (2026-09-14).
+- [decision] Codex write path: verified that `Set-Content` is not blocked by
+  Codex CLI; earlier failure was caused by compound commands ending in
+  `Remove-Item -Force` triggering `exec_policy.rs` `rm -f` heuristic under
+  `approval_policy = "never"`. Added verified write path to `tools/codex_guard.py`
+  (`--write` flag with secret scanning and shared state file locking) alongside
+  native `apply_patch` (2026-09-25).
+

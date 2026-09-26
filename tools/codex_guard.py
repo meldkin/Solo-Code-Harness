@@ -24,7 +24,14 @@ def main() -> int:
     group.add_argument("--command")
     group.add_argument("--content")
     parser.add_argument("--path", default="")
+    parser.add_argument("--write", action="store_true", help="Write content to --path after verification")
     args = parser.parse_args()
+    if args.write and not args.path:
+        print("ERROR: --write requires --path", file=sys.stderr)
+        return 2
+    if args.write and args.command is not None:
+        print("ERROR: --write cannot be used with --command", file=sys.stderr)
+        return 2
     value = args.command if args.command is not None else args.content
     if args.command is not None:
         hit = find_destructive(value)
@@ -41,6 +48,11 @@ def main() -> int:
         if args.path and not state.acquire_lock(args.path, engine="codex", model="codex-cli"):
             print(f"BLOCKED: file lock held by another engine: {args.path}", file=sys.stderr)
             return 2
+    if args.write:
+        target = Path(args.path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(args.content, encoding="utf-8")
+        print(f"WROTE: {args.path}")
     return 0
 
 
