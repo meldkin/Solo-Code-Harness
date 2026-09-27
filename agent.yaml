@@ -8,7 +8,7 @@ model:
   preferred: deepseek-v4-pro
   fallback:
     - claude-sonnet-4-6
-    - gpt-4o
+    - gpt-5.5
 skills:
   - algorithmic-discipline
   - api-patterns

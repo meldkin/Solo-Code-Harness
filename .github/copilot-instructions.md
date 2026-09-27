@@ -202,19 +202,24 @@ Use `#` in Copilot Chat to invoke prompts:
 
 Two external LLM providers are configured in `.vscode/settings.json`. Switch models via **Command Palette** → `GitHub Copilot: Switch Model` or click the model name in the Copilot Chat header.
 
-| Provider | Models Available | Best For |
-|----------|-----------------|----------|
-| **DeepSeek Direct** | `deepseek-chat`, `deepseek-reasoner` | Cost-effective coding, refactoring, deep reasoning, math |
-| **CommandCode Proxy** | Claude Sonnet 4, GPT-4o, Gemini 2.5 Pro | Complex architecture, code review, broad knowledge, large context analysis |
+`.vscode/settings.json` under `github.copilot.chat.models` is the source of truth for
+which models are selectable — don't restate the list here, because CommandCode adds and
+retires models without notice. To see what the provider serves right now:
 
-**API key management**: keys live in environment variables (`DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, `COMMANDCODE_API_KEY`, `COMMANDCODE_BASE_URL`). Never hardcode. See `.copilot/instruction/api-providers.md` for full API usage patterns.
+```powershell
+Invoke-RestMethod -Uri "$env:COMMANDCODE_BASE_URL/models" `
+  -Headers @{ Authorization = "Bearer $env:COMMANDCODE_API_KEY" } |
+  Select-Object -ExpandProperty data | Select-Object -ExpandProperty id | Sort-Object
+```
+
+**API key management**: keys live in environment variables (`COMMANDCODE_API_KEY`, `COMMANDCODE_BASE_URL`). DeepSeek direct would need `DEEPSEEK_API_KEY` and `DEEPSEEK_BASE_URL`, and is **not** configured here. Never hardcode. See `.copilot/instruction/api-providers.md` for full API usage patterns.
 
 **When to switch models:**
 - Default: use whichever model the user selected in VS Code
-- If task is math/logic heavy → prefer `deepseek-reasoner`
-- If task is complex architecture / multi-file refactor → prefer `claude-sonnet-4` via CommandCode
-- If cost matters → prefer `deepseek-chat`
-- If analyzing large files / repos → prefer `gemini-2.5-pro` (1M token context)
+- CommandCode ids carry the upstream vendor prefix (`deepseek/deepseek-v4-pro`, `Qwen/Qwen3.7-Max`, `google/gemini-3.5-flash`); verify an id against `/models` before using it
+- If task is complex architecture / multi-file refactor → prefer a Claude tier (`claude-opus-5`, `claude-sonnet-5`)
+- If cost matters → prefer `deepseek/deepseek-v4.1-flash` or `gpt-5.4-mini`
+- If analyzing large files / repos → prefer `google/gemini-3.5-flash` or `moonshotai/Kimi-K3`, and read `context_length` from `/models` rather than assuming a window size
 
 ## Shared State — Cross-Engine Collaboration (local-only)
 
