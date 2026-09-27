@@ -89,10 +89,11 @@ if ($config.ContainsKey("ANTHROPIC_BASE_URL") -and $config["ANTHROPIC_BASE_URL"]
 
 # Resolve the OpenCode v2 executable.
 # v2 ships as the npm package `@opencode/cli` (bins: opencode, opencode2). The
-# retired v1 line (`opencode-ai`) and the stale self-updating native binary at
-# ~/.opencode/bin are deliberately NOT used: on this machine the native binary
-# is still v1.18.x and would silently run the old CLI. Resolving the real
-# executable behind the npm shim also avoids Windows `%*` argument mangling.
+# retired v1 line (`opencode-ai`) and a v1 self-updating native binary at
+# ~/.opencode/bin are deliberately NOT used — that install sat there as v1.18.31
+# until 2026-09-28, when it was removed, and on PATH it would silently run the
+# old CLI. Resolving the real executable behind the npm shim also avoids Windows
+# `%*` argument mangling.
 $opencodeBin = $null
 $searchDirs = @()
 $genericCmd = Get-Command opencode -ErrorAction SilentlyContinue

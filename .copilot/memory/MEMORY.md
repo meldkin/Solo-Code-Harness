@@ -102,4 +102,17 @@ High-signal context loaded at session start. Detailed history belongs in
   upstream id (`commandcode/deepseek/deepseek-v4-pro`) while OpenCode refs use the
   harness key (`commandcode/deepseek-v4-pro`) — both correct for their dialect.
   `context_length` comes from the `/models` response, not the file. (2026-09-28)
+- [decision] Removed the retired OpenCode v1 install from this machine:
+  `opencode-ai@1.18.31` (npm global), `~/.opencode/` (a 224 MB self-updating
+  install holding `bin/opencode.exe` v1.18.31 plus its own `node_modules`) and
+  the now-dangling `~/.opencode/bin` entry in the User PATH. v2 stores nothing
+  there — config `~/.config/opencode`, data `~/.local/share/opencode`, cache and
+  binaries `~/.cache/opencode/bin`, state `~/.local/state/opencode` (per
+  `opencode debug paths`). Gotcha: `npm uninstall -g opencode-ai` also deletes
+  the `opencode` / `opencode.cmd` / `opencode.ps1` shims in the npm bin dir that
+  `@opencode/cli` needs, and `opencode` then falls through to whatever is next on
+  PATH. Restore them from the byte-identical `opencode2*` wrappers that
+  `@opencode/cli` also installs, or reinstall the package. The guards in
+  `opencode-env.ps1` and `tools/opencode_delegate.py` stay — they are now
+  defensive rather than reparative. (2026-09-28)
 

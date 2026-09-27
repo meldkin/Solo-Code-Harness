@@ -120,8 +120,9 @@ def find_opencode_binary() -> str | None:
 
     # Fall back to the @opencode/cli binary next to the node executable, which
     # covers nvm-windows / nvm global installs whose shim is not on PATH. The
-    # ~/.opencode/bin native binary is intentionally NOT used: on this machine
-    # it is still v1.18.x and would run the old CLI against a v2 config.
+    # ~/.opencode/bin native binary is intentionally NOT used: a v1
+    # self-updating install can sit there (it did on this machine as v1.18.31
+    # until 2026-09-28) and would run the old CLI against a v2 config.
     node_path = shutil.which("node")
     if node_path:
         cli_dir = Path(node_path).parent / "node_modules" / "@opencode" / "cli" / "bin"
