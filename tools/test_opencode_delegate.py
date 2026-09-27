@@ -25,14 +25,17 @@ if str(ROOT) not in sys.path:
 from tools import opencode_delegate  # noqa: E402
 
 
-def test_prefer_real_executable_resolves_npm_shim(tmp_path):
+def test_prefer_real_executable_ignores_retired_v1_package(tmp_path):
+    # The v1 package `opencode-ai` is no longer a recognised wrapper target: the
+    # v2 cutover resolves only `@opencode/cli`, so a shim wrapping only v1 stays
+    # a shim rather than silently launching the old CLI.
     shim = tmp_path / "opencode.cmd"
     shim.write_text("@echo off\n", encoding="utf-8")
-    real = tmp_path / "node_modules" / "opencode-ai" / "bin" / "opencode.exe"
-    real.parent.mkdir(parents=True)
-    real.write_text("", encoding="utf-8")
+    v1 = tmp_path / "node_modules" / "opencode-ai" / "bin" / "opencode.exe"
+    v1.parent.mkdir(parents=True)
+    v1.write_text("", encoding="utf-8")
 
-    assert opencode_delegate._prefer_real_executable(str(shim), platform="win32") == str(real)
+    assert opencode_delegate._prefer_real_executable(str(shim), platform="win32") == str(shim)
 
 
 def test_prefer_real_executable_resolves_v2_npm_shim(tmp_path):

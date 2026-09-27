@@ -14,11 +14,13 @@ source = "solo-code-io/solo-code-cli"
 generated_at = "2026-09-11T00:00:00Z"
 
 # --- ENGINE STATUS (v4.2.0) ---
-# .opencode/  -> first-class primary agent engine (reintroduced 2026-08).
-#                Its native format already follows Kilo's frontmatter, so
-#                tools/opencode_engine.py regenerates it near-identity.
-#                opencode.json carries the model default + native permission
-#                guard.
+# .opencode/  -> first-class primary agent engine, now targeting OpenCode v2
+#                (@opencode/cli + @opencode/plugin; the v1 line opencode-ai /
+#                @opencode-ai/plugin is retired). tools/opencode_engine.py
+#                regenerates agents (Kilo `permission:` -> v2 `permissions:`
+#                arrays), commands, and a v2 opencode.json (`providers` +
+#                ordered `permissions`), and embeds .kilo/instruction/*.md
+#                into root AGENTS.md because v2 loads only AGENTS.md.
 # .copilot/   -> NOT auto-generated. Manually kept in parity with .kilo/
 #                (source of truth); verified by tools/garden.py drift checks.
 # codex       -> direct CLI integration via codex-env.ps1 and tools/codex_*.py.

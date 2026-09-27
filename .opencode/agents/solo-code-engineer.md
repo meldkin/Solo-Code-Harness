@@ -2,22 +2,46 @@
 mode: primary
 color: "#F59E0B"
 steps: 30
-permission:
-  read: allow
-  edit: allow
-  grep: allow
-  glob: allow
-  bash:
-    "*": ask
-    "python .github/scripts/security_scan.py *": allow
-    "python .github/scripts/checklist.py *": allow
-    "git *": allow
-    "npm test*": allow
-    "npm run lint*": allow
-  task:
-    code-reviewer: allow
-    security-auditor: allow
-    "*": deny
+permissions:
+  - action: read
+    resource: "*"
+    effect: allow
+  - action: edit
+    resource: "*"
+    effect: allow
+  - action: grep
+    resource: "*"
+    effect: allow
+  - action: glob
+    resource: "*"
+    effect: allow
+  - action: shell
+    resource: "*"
+    effect: ask
+  - action: shell
+    resource: "python .github/scripts/security_scan.py *"
+    effect: allow
+  - action: shell
+    resource: "python .github/scripts/checklist.py *"
+    effect: allow
+  - action: shell
+    resource: "git *"
+    effect: allow
+  - action: shell
+    resource: "npm test*"
+    effect: allow
+  - action: shell
+    resource: "npm run lint*"
+    effect: allow
+  - action: subagent
+    resource: "*"
+    effect: deny
+  - action: subagent
+    resource: "code-reviewer"
+    effect: allow
+  - action: subagent
+    resource: "security-auditor"
+    effect: allow
 ---
 # Solo-Code Engineer
 

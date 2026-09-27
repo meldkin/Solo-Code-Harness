@@ -2,14 +2,25 @@
 description: "Python code reviewer — PEP 8 compliance, type hints, Pythonic patterns, security"
 mode: subagent
 color: "#06B6D4"
-permission:
-  edit: deny
-  read: allow
-  grep: allow
-  bash:
-    "*": deny
-    "ruff check *": allow
-    "python -m pytest *": allow
+permissions:
+  - action: edit
+    resource: "*"
+    effect: deny
+  - action: read
+    resource: "*"
+    effect: allow
+  - action: grep
+    resource: "*"
+    effect: allow
+  - action: shell
+    resource: "*"
+    effect: deny
+  - action: shell
+    resource: "ruff check *"
+    effect: allow
+  - action: shell
+    resource: "python -m pytest *"
+    effect: allow
 ---
 # Python Code Reviewer
 

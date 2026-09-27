@@ -555,18 +555,18 @@ def check_gemini(src: Path, dst: Path, *, skip_set: set[str] | None = None) -> l
 
 
 def check_opencode(src: Path, dst: Path) -> list[str]:
-    """Parity checks for the OpenCode engine (.opencode/).
+    """Parity checks for the OpenCode engine (.opencode/), OpenCode v2.
 
-    OpenCode mirrors .kilo/ with near-identity transforms (see
-    tools/opencode_engine.py): agents keep their frontmatter except dropped
-    permission keys, commands/instructions are copied verbatim.
-      .kilo/agents      -> .opencode/agents
-      .kilo/command     -> .opencode/commands (plural)
-      .kilo/instruction -> .opencode/instruction
-    Skills are NOT mirrored: OpenCode loads both .opencode/skills/ and the
-    Claude-compatible .claude/skills/ and requires unique names, so it relies
-    on .claude/skills/ alone (this check flags a stray .opencode/skills/).
-    Plus opencode.json (model default + native permission guard).
+    OpenCode mirrors .kilo/ with transforms (see tools/opencode_engine.py):
+      .kilo/agents  -> .opencode/agents  (Kilo `permission:` object rewritten
+                     to v2 ordered `permissions:` arrays)
+      .kilo/command -> .opencode/commands (plural, copied verbatim)
+      .kilo/instruction -> NOT mirrored; v2 loads only AGENTS.md, so the bodies
+                     are embedded into the root AGENTS.md between markers.
+    Skills are NOT mirrored: v2 loads .opencode/skills/, .claude/skills/ and
+    .agents/skills/, so mirroring would register every skill twice; the engine
+    relies on .claude/skills/ alone (this check flags a stray .opencode/skills/).
+    Plus opencode.json (v2 model default + providers + permissions array).
     """
     issues: list[str] = []
 
@@ -596,9 +596,25 @@ def check_opencode(src: Path, dst: Path) -> list[str]:
         for name in sorted(dst_names - src_names):
             issues.append(f"Stale command (no source): .opencode/commands/{name}")
 
-    # Instructions (direct copy, same filename + identical content)
-    issues.extend(check_instructions(src, dst, ".opencode"))
-    issues.extend(check_instruction_content(src, dst, ".opencode"))
+    # Instructions: v2 resolves only AGENTS.md, so the v1 .opencode/instruction/
+    # mirror must be gone and the generated block must appear in root AGENTS.md
+    # (see opencode_engine.embed_instructions).
+    if (dst / "instruction").exists():
+        issues.append(
+            "Stale mirror: .opencode/instruction exists — v2 loads AGENTS.md "
+            "(run 'python tools/generate_harness.py --harness opencode')"
+        )
+    agents_md = ROOT / "AGENTS.md"
+    try:
+        agents_text = agents_md.read_text(encoding="utf-8")
+    except OSError:
+        agents_text = ""
+    if agents_text.count("opencode-v2-inline-instructions") < 2:
+        issues.append(
+            "Missing embedded instructions: AGENTS.md has no opencode-v2 "
+            "inline-instructions block (run "
+            "'python tools/generate_harness.py --harness opencode')"
+        )
 
     # Static engine config
     if not (ROOT / "opencode.json").exists():

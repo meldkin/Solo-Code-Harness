@@ -3,48 +3,229 @@
   "model": "commandcode/deepseek-v4-pro",
   "small_model": "commandcode/gpt-5.4-mini",
   "default_agent": "solo-code-engineer",
-  "instructions": [
-    "AGENTS.md",
-    ".opencode/instruction/*.md"
-  ],
-  "agent": {
+  "agents": {
     "solo-code-engineer": {
       "model": "commandcode/deepseek-v4-pro"
     }
   },
-  "permission": {
-    "edit": "ask",
-    "bash": {
-      "*": "ask",
-      "python .github/scripts/security_scan.py *": "allow",
-      "python .github/scripts/checklist.py *": "allow",
-      "git status*": "allow",
-      "git diff*": "allow",
-      "git log*": "allow",
-      "git add*": "allow",
-      "git commit*": "allow",
-      "git push*": "ask",
-      "git reset --hard*": "deny",
-      "git push --force*": "deny",
-      "rm -rf *": "deny",
-      "rm -rf /*": "deny",
-      "del /s /q *": "deny",
-      "DROP TABLE*": "deny",
-      "DROP DATABASE*": "deny"
-    },
-    "external_directory": "ask",
-    "skill": {
-      "*": "allow",
-      "ci-cd-and-automation": "ask",
-      "permission-guard": "ask",
-      "plan": "ask",
-      "planning-and-task-breakdown": "ask",
-      "requesting-code-review": "ask",
-      "shipping-and-launch": "ask",
-      "spec-driven-development": "ask",
-      "subagent-driven-development": "ask",
-      "task-delegation": "ask",
-      "wayfinder": "ask"
+  "providers": {
+    "commandcode": {
+      "name": "Command Code",
+      "env": [
+        "COMMANDCODE_API_KEY"
+      ],
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "baseURL": "{env:COMMANDCODE_BASE_URL}"
+      },
+      "models": {
+        "deepseek-v4-pro": {
+          "modelID": "deepseek/deepseek-v4-pro",
+          "name": "DeepSeek V4 Pro",
+          "limit": {
+            "context": 1000000,
+            "output": 384000
+          }
+        },
+        "deepseek-v4-flash": {
+          "modelID": "deepseek/deepseek-v4-flash",
+          "name": "DeepSeek V4 Flash",
+          "limit": {
+            "context": 1000000,
+            "output": 384000
+          }
+        },
+        "deepseek-v4.1-flash": {
+          "modelID": "deepseek/deepseek-v4.1-flash",
+          "name": "DeepSeek V4.1 Flash",
+          "limit": {
+            "context": 1000000,
+            "output": 384000
+          }
+        },
+        "gpt-5.4-mini": {
+          "modelID": "gpt-5.4-mini",
+          "name": "GPT-5.4 Mini",
+          "limit": {
+            "context": 400000,
+            "output": 128000
+          }
+        },
+        "glm-5": {
+          "modelID": "zai-org/GLM-5",
+          "name": "GLM-5",
+          "limit": {
+            "context": 200000,
+            "output": 131072
+          }
+        },
+        "glm-5.1": {
+          "modelID": "zai-org/GLM-5.1",
+          "name": "GLM-5.1",
+          "limit": {
+            "context": 200000,
+            "output": 131072
+          }
+        },
+        "qwen3.7-max": {
+          "modelID": "Qwen/Qwen3.7-Max",
+          "name": "Qwen 3.7 Max",
+          "limit": {
+            "context": 1000000,
+            "output": 131072
+          }
+        },
+        "qwen3.6-plus": {
+          "modelID": "Qwen/Qwen3.6-Plus",
+          "name": "Qwen 3.6 Plus",
+          "limit": {
+            "context": 1000000,
+            "output": 131072
+          }
+        }
+      }
     }
-  }
+  },
+  "permissions": [
+    {
+      "action": "edit",
+      "resource": "*",
+      "effect": "ask"
+    },
+    {
+      "action": "external_directory",
+      "resource": "*",
+      "effect": "ask"
+    },
+    {
+      "action": "shell",
+      "resource": "*",
+      "effect": "ask"
+    },
+    {
+      "action": "shell",
+      "resource": "python .github/scripts/security_scan.py *",
+      "effect": "allow"
+    },
+    {
+      "action": "shell",
+      "resource": "python .github/scripts/checklist.py *",
+      "effect": "allow"
+    },
+    {
+      "action": "shell",
+      "resource": "git status *",
+      "effect": "allow"
+    },
+    {
+      "action": "shell",
+      "resource": "git diff *",
+      "effect": "allow"
+    },
+    {
+      "action": "shell",
+      "resource": "git log *",
+      "effect": "allow"
+    },
+    {
+      "action": "shell",
+      "resource": "git add *",
+      "effect": "allow"
+    },
+    {
+      "action": "shell",
+      "resource": "git commit *",
+      "effect": "allow"
+    },
+    {
+      "action": "shell",
+      "resource": "git push *",
+      "effect": "ask"
+    },
+    {
+      "action": "shell",
+      "resource": "git reset --hard *",
+      "effect": "deny"
+    },
+    {
+      "action": "shell",
+      "resource": "git push --force *",
+      "effect": "deny"
+    },
+    {
+      "action": "shell",
+      "resource": "rm -rf *",
+      "effect": "deny"
+    },
+    {
+      "action": "shell",
+      "resource": "del /s /q *",
+      "effect": "deny"
+    },
+    {
+      "action": "shell",
+      "resource": "DROP TABLE *",
+      "effect": "deny"
+    },
+    {
+      "action": "shell",
+      "resource": "DROP DATABASE *",
+      "effect": "deny"
+    },
+    {
+      "action": "skill",
+      "resource": "*",
+      "effect": "allow"
+    },
+    {
+      "action": "skill",
+      "resource": "ci-cd-and-automation",
+      "effect": "ask"
+    },
+    {
+      "action": "skill",
+      "resource": "permission-guard",
+      "effect": "ask"
+    },
+    {
+      "action": "skill",
+      "resource": "plan",
+      "effect": "ask"
+    },
+    {
+      "action": "skill",
+      "resource": "planning-and-task-breakdown",
+      "effect": "ask"
+    },
+    {
+      "action": "skill",
+      "resource": "requesting-code-review",
+      "effect": "ask"
+    },
+    {
+      "action": "skill",
+      "resource": "shipping-and-launch",
+      "effect": "ask"
+    },
+    {
+      "action": "skill",
+      "resource": "spec-driven-development",
+      "effect": "ask"
+    },
+    {
+      "action": "skill",
+      "resource": "subagent-driven-development",
+      "effect": "ask"
+    },
+    {
+      "action": "skill",
+      "resource": "task-delegation",
+      "effect": "ask"
+    },
+    {
+      "action": "skill",
+      "resource": "wayfinder",
+      "effect": "ask"
+    }
+  ]
 }

@@ -76,4 +76,14 @@ High-signal context loaded at session start. Detailed history belongs in
   `approval_policy = "never"`. Added verified write path to `tools/codex_guard.py`
   (`--write` flag with secret scanning and shared state file locking) alongside
   native `apply_patch` (2026-09-25).
+- [decision] OpenCode v2 rejects V1 plugins by construction — the plugin API is
+  the only intentional breaking change. A V1 default export
+  (`export default function(){ return { config, auth } }`) raises
+  `PluginModule.LoadError: Plugin must export a default definition with an id and
+  an effect or setup function`. Verified on `commandcode-go-opencode-provider@0.4.0`
+  under `@opencode/cli@2.0.18`: it can never load, which is why the harness
+  retired it. Log lives at `~/.local/share/opencode/log/opencode.log`
+  (grep `failed to load plugin`). The global `~/.config/opencode/opencode.jsonc`
+  was migrated to V2-native `providers` (freemodel) with the plugin entry and its
+  empty `commandcode` stub removed (2026-09-27).
 

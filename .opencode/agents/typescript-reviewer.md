@@ -2,14 +2,25 @@
 description: "TypeScript/JS code reviewer — types, React patterns, XSS prevention, async safety"
 mode: subagent
 color: "#6366F1"
-permission:
-  edit: deny
-  read: allow
-  grep: allow
-  bash:
-    "*": deny
-    "npx tsc --noEmit*": allow
-    "npm run lint*": allow
+permissions:
+  - action: edit
+    resource: "*"
+    effect: deny
+  - action: read
+    resource: "*"
+    effect: allow
+  - action: grep
+    resource: "*"
+    effect: allow
+  - action: shell
+    resource: "*"
+    effect: deny
+  - action: shell
+    resource: "npx tsc --noEmit*"
+    effect: allow
+  - action: shell
+    resource: "npm run lint*"
+    effect: allow
 ---
 # TypeScript/JavaScript Code Reviewer
 

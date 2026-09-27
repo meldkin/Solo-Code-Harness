@@ -2,11 +2,19 @@
 description: "System architect — designs architecture, evaluates trade-offs, proposes structures"
 mode: subagent
 color: "#8B5CF6"
-permission:
-  edit: deny
-  bash: deny
-  read: allow
-  grep: allow
+permissions:
+  - action: edit
+    resource: "*"
+    effect: deny
+  - action: shell
+    resource: "*"
+    effect: deny
+  - action: read
+    resource: "*"
+    effect: allow
+  - action: grep
+    resource: "*"
+    effect: allow
 ---
 # System Architect
 

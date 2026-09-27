@@ -87,33 +87,32 @@ if ($config.ContainsKey("ANTHROPIC_BASE_URL") -and $config["ANTHROPIC_BASE_URL"]
     $env:ANTHROPIC_BASE_URL = $antUrl
 }
 
-# Resolve opencode executable:
-# Prefer native opencode.exe if available to avoid Windows batch/shim (%*) argument mangling
+# Resolve the OpenCode v2 executable.
+# v2 ships as the npm package `@opencode/cli` (bins: opencode, opencode2). The
+# retired v1 line (`opencode-ai`) and the stale self-updating native binary at
+# ~/.opencode/bin are deliberately NOT used: on this machine the native binary
+# is still v1.18.x and would silently run the old CLI. Resolving the real
+# executable behind the npm shim also avoids Windows `%*` argument mangling.
 $opencodeBin = $null
-$exeCmd = Get-Command opencode.exe -ErrorAction SilentlyContinue
-if ($exeCmd -and (Test-Path -LiteralPath $exeCmd.Source)) {
-    $opencodeBin = $exeCmd.Source
+$searchDirs = @()
+$genericCmd = Get-Command opencode -ErrorAction SilentlyContinue
+if ($genericCmd -and $genericCmd.Source) {
+    $searchDirs += (Split-Path $genericCmd.Source -Parent)
 }
-else {
-    $genericCmd = Get-Command opencode -ErrorAction SilentlyContinue
-    if ($genericCmd) {
-        $parentDir = Split-Path $genericCmd.Source -Parent
-        $v2Exe = Join-Path $parentDir "node_modules\@opencode\cli\bin\opencode.exe"
-        $v1Exe = Join-Path $parentDir "node_modules\opencode-ai\bin\opencode.exe"
-        if (Test-Path -LiteralPath $v2Exe) {
-            $opencodeBin = $v2Exe
-        }
-        elseif (Test-Path -LiteralPath $v1Exe) {
-            $opencodeBin = $v1Exe
-        }
-        else {
-            $opencodeBin = $genericCmd.Source
-        }
+$nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+if ($nodeCmd -and $nodeCmd.Source) {
+    $searchDirs += (Split-Path $nodeCmd.Source -Parent)
+}
+foreach ($dir in ($searchDirs | Select-Object -Unique)) {
+    $candidate = Join-Path $dir "node_modules\@opencode\cli\bin\opencode.exe"
+    if (Test-Path -LiteralPath $candidate) {
+        $opencodeBin = $candidate
+        break
     }
 }
 
 if (-not $opencodeBin) {
-    Write-Error "opencode not found on PATH. Install with: npm install -g @opencode/cli"
+    Write-Error "OpenCode v2 (@opencode/cli) not found. Install with: npm install -g @opencode/cli"
     exit 1
 }
 

@@ -2,11 +2,19 @@
 description: "Database reviewer — indexes, parameterized queries, migrations, schema design"
 mode: subagent
 color: "#14B8A6"
-permission:
-  edit: deny
-  bash: deny
-  read: allow
-  grep: allow
+permissions:
+  - action: edit
+    resource: "*"
+    effect: deny
+  - action: shell
+    resource: "*"
+    effect: deny
+  - action: read
+    resource: "*"
+    effect: allow
+  - action: grep
+    resource: "*"
+    effect: allow
 ---
 # Database Reviewer
 

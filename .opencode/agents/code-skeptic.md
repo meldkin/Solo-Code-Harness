@@ -2,15 +2,25 @@
 description: Code skeptic — adversarial code review to catch edge cases and security gaps
 mode: primary
 color: "#EF4444"
-permission:
-  read: allow
-  edit:
-    "*": deny
-    "*.md": allow
-    "*.mdc": allow
-  bash:
-    "*": deny
-    "python *": allow
+permissions:
+  - action: read
+    resource: "*"
+    effect: allow
+  - action: edit
+    resource: "*"
+    effect: deny
+  - action: edit
+    resource: "*.md"
+    effect: allow
+  - action: edit
+    resource: "*.mdc"
+    effect: allow
+  - action: shell
+    resource: "*"
+    effect: deny
+  - action: shell
+    resource: "python *"
+    effect: allow
 ---
 # Code Skeptic
 

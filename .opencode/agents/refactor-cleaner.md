@@ -2,11 +2,19 @@
 description: "Code refactoring specialist — removes dead code, simplifies logic, improves structure"
 mode: subagent
 color: "#F97316"
-permission:
-  edit: allow
-  read: allow
-  grep: allow
-  bash: deny
+permissions:
+  - action: edit
+    resource: "*"
+    effect: allow
+  - action: read
+    resource: "*"
+    effect: allow
+  - action: grep
+    resource: "*"
+    effect: allow
+  - action: shell
+    resource: "*"
+    effect: deny
 ---
 # Refactoring & Code Cleaning Specialist
 

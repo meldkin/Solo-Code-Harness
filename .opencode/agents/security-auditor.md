@@ -2,14 +2,25 @@
 description: "Security auditor – scans for secrets, vulnerabilities, misconfigurations"
 mode: subagent
 color: "#EF4444"
-permission:
-  edit: deny
-  read: allow
-  grep: allow
-  bash:
-    "*": deny
-    "python .github/scripts/security_scan.py *": allow
-    "grep *": allow
+permissions:
+  - action: edit
+    resource: "*"
+    effect: deny
+  - action: read
+    resource: "*"
+    effect: allow
+  - action: grep
+    resource: "*"
+    effect: allow
+  - action: shell
+    resource: "*"
+    effect: deny
+  - action: shell
+    resource: "python .github/scripts/security_scan.py *"
+    effect: allow
+  - action: shell
+    resource: "grep *"
+    effect: allow
 ---
 # Security Auditor
 

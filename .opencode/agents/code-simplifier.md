@@ -2,11 +2,19 @@
 description: "Code simplification — reduces complexity, removes duplication, improves readability"
 mode: primary
 color: "#F97316"
-permission:
-  read: allow
-  edit: allow
-  bash: allow
-  question: allow
+permissions:
+  - action: read
+    resource: "*"
+    effect: allow
+  - action: edit
+    resource: "*"
+    effect: allow
+  - action: shell
+    resource: "*"
+    effect: allow
+  - action: question
+    resource: "*"
+    effect: allow
 ---
 # Code Simplifier
 

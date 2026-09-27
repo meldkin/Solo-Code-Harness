@@ -118,10 +118,10 @@ MODELS = {
         "provider": "commandcode",
         "display": "DeepSeek V4 Flash",
     },
-    "deepseek-v4-flash-free": {
-        "id": "opencode/deepseek-v4-flash-free",
+    "mimo-v2.6-flash-free": {
+        "id": "opencode/mimo-v2.6-flash-free",
         "provider": "opencode",
-        "display": "DeepSeek V4 Flash Free",
+        "display": "Mimo v2.6 Flash Free",
     },
     "deepseek-v4-pro": {
         "id": "commandcode/deepseek-v4-pro",

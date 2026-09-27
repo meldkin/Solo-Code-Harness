@@ -2,11 +2,19 @@
 description: "Code review specialist – checks quality, security, performance"
 mode: subagent
 color: "#10B981"
-permission:
-  edit: deny
-  bash: deny
-  read: allow
-  grep: allow
+permissions:
+  - action: edit
+    resource: "*"
+    effect: deny
+  - action: shell
+    resource: "*"
+    effect: deny
+  - action: read
+    resource: "*"
+    effect: allow
+  - action: grep
+    resource: "*"
+    effect: allow
 ---
 # Senior Code Reviewer
 

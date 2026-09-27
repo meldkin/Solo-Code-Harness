@@ -6,16 +6,18 @@ ORCHESTRATION MODEL: Claude Code is ALWAYS the orchestrator.
 This script uses `opencode run` to send a single stateless prompt to OpenCode
 and parses the JSON events stream. The orchestrator must read and verify every result.
 
-CLI APPROACH (OpenCode run):
-  opencode run "prompt" --format json --auto --model provider/model
+CLI APPROACH (OpenCode v2 `run`):
+  opencode run "prompt" --format json --auto --standalone --model provider/model
 
-IMPROVEMENTS OVER Kilo CLI:
-  1. Free models — opencode/deepseek-v4-flash-free costs $0
-  2. Reasoning tokens — tracks reasoning tokens separately
-  3. Cache tracking — separate cache read/write token counts
-  4. Multi-provider — commandcode, DeepSeek, OpenAI, Anthropic, OpenRouter, ZenMux
-  5. Session export — opencode export <sessionID> for full JSON transcript
-  6. Stats command — opencode stats for usage analytics
+OPENCODE V2 NOTES (verified 2026-09-27, @opencode/cli 2.0.18):
+  - `run` keeps the v1 flags used here: --format json, --auto, -m/--model.
+  - v2 `--format json` emits `step_start` and `text` events only; there is no
+    `step_finish` event, so token and cost fields log as null. The parser keeps
+    step_finish handling for forward compatibility with a build that restores it.
+  - --standalone runs a private server, so delegation never touches the user's
+    shared background OpenCode server or its sessions.
+  - The provider is self-contained in opencode.json (v2 `providers`), replacing
+    the retired v1 plugin `commandcode-go-opencode-provider`.
 
 Usage:
     python tools/opencode_delegate.py "<self-contained prompt>"
@@ -40,7 +42,9 @@ from typing import Any
 # ── Constants ────────────────────────────────────────────────────────────────
 
 DEFAULT_MODEL = "commandcode/deepseek-v4-pro"
-FREE_MODEL = "opencode/deepseek-v4-flash-free"
+# OpenCode v2 dropped `opencode/deepseek-v4-flash-free`; the free tier now
+# exposes models such as opencode/mimo-v2.6-flash-free (verified 2026-09-27).
+FREE_MODEL = "opencode/mimo-v2.6-flash-free"
 
 USAGE_LOG = Path(".solocode/opencode-usage.jsonl")
 USAGE_LOG.parent.mkdir(parents=True, exist_ok=True)
@@ -76,11 +80,12 @@ def _stderr(msg: str) -> None:
 # multi-line arguments (the guardrail prompt reaches the model truncated to its
 # first line) and can drop trailing flags like `--format json`. The shim wraps a
 # real executable; prefer that.
+# OpenCode v2 ships only as the npm package `@opencode/cli` (bins opencode,
+# opencode2). The retired v1 package `opencode-ai` is deliberately not listed:
+# resolving it would run the old CLI against a v2 config.
 _SHIM_WRAPPED_RELATIVE_PATHS = (
     Path("node_modules") / "@opencode" / "cli" / "bin" / "opencode.exe",
     Path("node_modules") / "@opencode" / "cli" / "bin" / "opencode",
-    Path("node_modules") / "opencode-ai" / "bin" / "opencode.exe",
-    Path("node_modules") / "opencode-ai" / "bin" / "opencode",
 )
 
 
@@ -113,16 +118,17 @@ def find_opencode_binary() -> str | None:
     if opencode_path:
         return _prefer_real_executable(opencode_path)
 
-    # Check ~/.opencode/bin (standard install location)
-    home_opencode = Path.home() / ".opencode" / "bin" / "opencode"
-    if home_opencode.exists():
-        return str(home_opencode)
-
-    # Check Windows user profile
-    if sys.platform == "win32":
-        win_opencode = Path.home() / ".opencode" / "bin" / "opencode.exe"
-        if win_opencode.exists():
-            return str(win_opencode)
+    # Fall back to the @opencode/cli binary next to the node executable, which
+    # covers nvm-windows / nvm global installs whose shim is not on PATH. The
+    # ~/.opencode/bin native binary is intentionally NOT used: on this machine
+    # it is still v1.18.x and would run the old CLI against a v2 config.
+    node_path = shutil.which("node")
+    if node_path:
+        cli_dir = Path(node_path).parent / "node_modules" / "@opencode" / "cli" / "bin"
+        for name in ("opencode.exe", "opencode"):
+            candidate = cli_dir / name
+            if candidate.is_file():
+                return str(candidate)
 
     return None
 
@@ -134,8 +140,9 @@ def parse_json_events(output: str) -> dict[str, Any]:
         - text: concatenated text from all text events
         - events: list of all parsed events
         - session_id: session ID from first event
-        - tokens: token usage from step_finish event (includes reasoning + cache)
-        - cost: cost from step_finish event
+        - tokens: token usage from a step_finish event, when present (v2
+          `--format json` emitting only step_start/text leaves this None)
+        - cost: cost from a step_finish event, when present
         - error: error message if any error event found
     """
     result: dict[str, Any] = {
@@ -197,6 +204,7 @@ def run_opencode_cli(
         "--model", model,
         "--format", "json",
         "--auto",  # auto-approve non-destructive permissions
+        "--standalone",  # private server — do not touch the shared user server
     ]
 
     _stderr(f"Running: opencode run ... --model {model} --format json --auto")

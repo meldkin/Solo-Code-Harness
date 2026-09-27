@@ -2,11 +2,19 @@
 description: Implementation planner — breaks down features into step-by-step plans
 mode: subagent
 color: "#3B82F6"
-permission:
-  edit: deny
-  bash: deny
-  read: allow
-  grep: allow
+permissions:
+  - action: edit
+    resource: "*"
+    effect: deny
+  - action: shell
+    resource: "*"
+    effect: deny
+  - action: read
+    resource: "*"
+    effect: allow
+  - action: grep
+    resource: "*"
+    effect: allow
 ---
 # Implementation Planner
 

@@ -2,15 +2,28 @@
 description: "TDD guide — test-driven development, test coverage improvement, test strategy"
 mode: subagent
 color: "#22C55E"
-permission:
-  edit: allow
-  read: allow
-  grep: allow
-  bash:
-    "*": deny
-    "python -m pytest *": allow
-    "npm test*": allow
-    "npm run test*": allow
+permissions:
+  - action: edit
+    resource: "*"
+    effect: allow
+  - action: read
+    resource: "*"
+    effect: allow
+  - action: grep
+    resource: "*"
+    effect: allow
+  - action: shell
+    resource: "*"
+    effect: deny
+  - action: shell
+    resource: "python -m pytest *"
+    effect: allow
+  - action: shell
+    resource: "npm test*"
+    effect: allow
+  - action: shell
+    resource: "npm run test*"
+    effect: allow
 ---
 # TDD Guide
 

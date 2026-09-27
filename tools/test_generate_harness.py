@@ -260,9 +260,10 @@ def test_real_repo_skill_bodies_are_in_sync():
 
 # ─── opencode engine: disabled-skill permission mapping ──────────────────────
 #
-# OpenCode ignores Claude's `disable-model-invocation` field, so a skill meant
-# to be user-invoked only would otherwise become silently model-invocable. The
-# generator maps that flag to `permission.skill[name] = "ask"`.
+# OpenCode v2 ignores Claude's `disable-model-invocation` field, so a skill
+# meant to be user-invoked only would otherwise become silently model-invocable.
+# The generator maps that flag to an ordered `permissions` entry with action
+# `skill` and effect `ask`.
 
 _DISABLED_SKILL_MD = (
     "---\nname: guard\ndescription: x\ndisable-model-invocation: true\n---\nbody\n"
@@ -295,12 +296,13 @@ def test_generated_opencode_json_gates_disabled_skills(tmp_path):
 
     data = json.loads((tmp_path / "opencode.json").read_text(encoding="utf-8"))
     assert data["default_agent"] == "solo-code-engineer"
-    assert data["permission"]["skill"]["guard"] == "ask"
-    # "*" is listed first so the specific rule wins (OpenCode: last match wins).
-    assert list(data["permission"]["skill"])[0] == "*"
+    skill_rules = [r for r in data["permissions"] if r["action"] == "skill"]
+    # "*" is listed first so the specific rule wins (v2: last match wins).
+    assert skill_rules[0] == {"action": "skill", "resource": "*", "effect": "allow"}
+    assert {"action": "skill", "resource": "guard", "effect": "ask"} in skill_rules
 
 
 def test_generated_opencode_json_omits_skill_block_without_flags(tmp_path):
     opencode_engine.generate_opencode_json(tmp_path / ".opencode", tmp_path, {})
     data = json.loads((tmp_path / "opencode.json").read_text(encoding="utf-8"))
-    assert "skill" not in data["permission"]
+    assert all(r["action"] != "skill" for r in data["permissions"])
