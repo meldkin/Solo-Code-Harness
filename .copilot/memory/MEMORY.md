@@ -86,4 +86,20 @@ High-signal context loaded at session start. Detailed history belongs in
   (grep `failed to load plugin`). The global `~/.config/opencode/opencode.jsonc`
   was migrated to V2-native `providers` (freemodel) with the plugin entry and its
   empty `commandcode` stub removed (2026-09-27).
+- [decision] `opencode.json` keeps `$schema: https://opencode.ai/config.json`
+  even though that published schema is still V1-shaped (`agent`/`provider`/
+  `permission` singular, `additionalProperties: false`). The V2 runtime reads the
+  plural keys this engine emits, so the runtime is authoritative and the editor
+  may flag three properties until upstream publishes a V2 schema. No V2 schema URL
+  exists yet (`/v2/config.json`, `/config.v2.json`, `/schema/v2/config.json` all
+  404). (2026-09-28)
+- [decision] CommandCode model ids are verified against
+  `GET {COMMANDCODE_BASE_URL}/models`, never from memory: the catalog drifts and
+  the old `api-providers.md` advertised nine ids that no longer resolve. Each
+  CommandCode consumer declares models separately, so a new model needs one entry
+  in `tools/opencode_engine.py` `_PROVIDER_MODELS` (OpenCode), `.vscode/settings.json`
+  (Copilot), and `~/.config/kilo/kilo.jsonc` (Kilo). Kilo refs use the full
+  upstream id (`commandcode/deepseek/deepseek-v4-pro`) while OpenCode refs use the
+  harness key (`commandcode/deepseek-v4-pro`) — both correct for their dialect.
+  `context_length` comes from the `/models` response, not the file. (2026-09-28)
 
