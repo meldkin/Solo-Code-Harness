@@ -127,6 +127,16 @@
       "version": "deepseek/deepseek-v4-pro"
     },
     {
+      "name": "DeepSeek V4.1 Flash (via CC)",
+      "description": "DeepSeek V4.1 Flash via CommandCode — 1M context, fast and cost-effective",
+      "vendor": "commandcode",
+      "family": "deepseek",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "apiKey": "${COMMANDCODE_API_KEY}",
+      "baseUrl": "${COMMANDCODE_BASE_URL}",
+      "version": "deepseek/deepseek-v4.1-flash"
+    },
+    {
       "name": "Qwen 3.7 Max (via CC)",
       "description": "Alibaba Qwen 3.7 Max — top Chinese LLM, strong coding + reasoning",
       "vendor": "commandcode",
