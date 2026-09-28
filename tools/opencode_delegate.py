@@ -16,8 +16,9 @@ OPENCODE V2 NOTES (verified 2026-09-27, @opencode/cli 2.0.18):
     step_finish handling for forward compatibility with a build that restores it.
   - --standalone runs a private server, so delegation never touches the user's
     shared background OpenCode server or its sessions.
-  - The provider is self-contained in opencode.json (v2 `providers`), replacing
-    the retired v1 plugin `commandcode-go-opencode-provider`.
+  - The provider is self-contained in .opencode/opencode.json (v2 `providers`),
+    replacing the retired v1 plugin `commandcode-go-opencode-provider`; the root
+    opencode.json stays v1-safe for the host IDE's bundled OpenCode v1.
 
 Usage:
     python tools/opencode_delegate.py "<self-contained prompt>"

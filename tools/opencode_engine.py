@@ -34,22 +34,28 @@ Transform rules (source -> OpenCode v2):
               OpenCode ignores that Claude-only field (see collect_disabled_skills).
   - instructions: OpenCode v2 accepts an `instructions` config array but does
               not resolve it, and loads only `AGENTS.md` (docs: Instructions >
-              Configuration). The `.kilo/instruction/*.md` bodies are therefore
-              inlined into the root `AGENTS.md` between markers, and any legacy
-              `.opencode/instruction/` mirror is pruned.
-  - config:   root opencode.json is emitted in the v2 schema: `agents` and
-              `providers` (plural), an ordered `permissions` array, and a
-              self-contained `commandcode` provider replacing the retired v1
-              plugin `commandcode-go-opencode-provider`. Only the
-              `commandcode/<id>` models the harness references are declared
-              (_PROVIDER_MODELS); add an entry there when a new reference lands.
+              Configuration). File-type rules should not bloat the
+              always-loaded AGENTS.md, so `.kilo/instruction/*.md` become
+              on-demand skills under `.opencode/skills/<id>/SKILL.md`, which v2
+              advertises by description and loads only when relevant. Any
+              legacy `.opencode/instruction/` mirror is pruned.
+  - config:   split across two files because the host IDE's OpenCode v1
+              (`kilo.exe`) strictly validates the root config and hard-rejects
+              v2-only keys. Root `opencode.json` keeps only v1-safe keys
+              (`$schema`, `model`, `small_model`, `default_agent`, `agents`,
+              `permission`); `.opencode/opencode.json` carries the v2-only
+              self-contained `commandcode` provider (replacing the retired v1
+              plugin `commandcode-go-opencode-provider`). OpenCode v2 merges the
+              local file with higher precedence; Kilo's validator ignores it.
+              The permission gate uses the legacy `permission` object for the
+              same reason (v2 maps and enforces it). Only the `commandcode/<id>`
+              models the harness references are declared (_PROVIDER_MODELS).
 """
 
 from __future__ import annotations
 
 import contextlib
 import json
-import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -68,13 +74,6 @@ _PERMISSION_ACTION_RENAME = {"bash": "shell", "task": "subagent"}
 # user-only skill invocation, so "ask" is the closest faithful mapping: the
 # model may request the skill, but the user approves before it loads.
 _DISABLED_SKILL_PERMISSION = "ask"
-
-# Markers delimiting the generated instruction block inside the root AGENTS.md.
-_AGENTS_MARKER_BEGIN = (
-    "<!-- BEGIN opencode-v2-inline-instructions "
-    "(generated from .kilo/instruction/*.md by tools/opencode_engine.py) -->"
-)
-_AGENTS_MARKER_END = "<!-- END opencode-v2-inline-instructions -->"
 
 # Models the harness references, declared explicitly because the v2 provider is
 # self-contained and no longer inherits the retired v1 plugin's catalog. The key
@@ -128,26 +127,31 @@ _PROVIDER_MODELS: dict[str, dict[str, Any]] = {
     },
 }
 
-# Ordered allow/deny rules guarding destructive shell use. v2 resolves with
-# last-match-wins, so broad rules precede specific allow/deny rules.
-_BASE_PERMISSION_RULES: list[dict[str, str]] = [
-    {"action": "edit", "resource": "*", "effect": "ask"},
-    {"action": "external_directory", "resource": "*", "effect": "ask"},
-    {"action": "shell", "resource": "*", "effect": "ask"},
-    {"action": "shell", "resource": "python .github/scripts/security_scan.py *", "effect": "allow"},
-    {"action": "shell", "resource": "python .github/scripts/checklist.py *", "effect": "allow"},
-    {"action": "shell", "resource": "git status *", "effect": "allow"},
-    {"action": "shell", "resource": "git diff *", "effect": "allow"},
-    {"action": "shell", "resource": "git log *", "effect": "allow"},
-    {"action": "shell", "resource": "git add *", "effect": "allow"},
-    {"action": "shell", "resource": "git commit *", "effect": "allow"},
-    {"action": "shell", "resource": "git push *", "effect": "ask"},
-    {"action": "shell", "resource": "git reset --hard *", "effect": "deny"},
-    {"action": "shell", "resource": "git push --force *", "effect": "deny"},
-    {"action": "shell", "resource": "rm -rf *", "effect": "deny"},
-    {"action": "shell", "resource": "del /s /q *", "effect": "deny"},
-    {"action": "shell", "resource": "DROP TABLE *", "effect": "deny"},
-    {"action": "shell", "resource": "DROP DATABASE *", "effect": "deny"},
+# Ordered shell allow/deny rules for the legacy `permission.bash` object.
+#
+# Why the legacy shape: the host IDE (Kilo Code 7.8.1) bundles OpenCode v1 in
+# `kilo.exe`, whose `config check` hard-rejects a top-level `permissions` array
+# ("V2 permissions are not supported by OpenCode V1"). OpenCode v2 maps and
+# enforces this legacy `permission` object 1:1 (verified 2026-09-28:
+# `opencode debug agents` shows these exact rules on every agent), so the
+# shared shape is what both readers accept. Broad rules precede specific ones
+# because the last matching rule wins.
+_BASE_BASH_RULES: list[tuple[str, str]] = [
+    ("*", "ask"),
+    ("python .github/scripts/security_scan.py *", "allow"),
+    ("python .github/scripts/checklist.py *", "allow"),
+    ("git status*", "allow"),
+    ("git diff*", "allow"),
+    ("git log*", "allow"),
+    ("git add*", "allow"),
+    ("git commit*", "allow"),
+    ("git push*", "ask"),
+    ("git reset --hard*", "deny"),
+    ("git push --force*", "deny"),
+    ("rm -rf *", "deny"),
+    ("del /s /q *", "deny"),
+    ("DROP TABLE*", "deny"),
+    ("DROP DATABASE*", "deny"),
 ]
 
 
@@ -337,22 +341,30 @@ def generate_commands(kilo_root: Path, opencode_root: Path) -> int:
     return 0
 
 
-def prune_duplicate_skills(opencode_root: Path) -> int:
-    """Remove `.opencode/skills/` if a legacy mirror is present.
+def prune_duplicate_skills(kilo_root: Path, opencode_root: Path) -> int:
+    """Remove any `.opencode/skills/<id>` that mirrors a `.kilo/skill/<id>`.
 
-    OpenCode v2 loads `.opencode/skills/`, the Claude-compatible
-    `.claude/skills/`, and `.agents/skills/`. Mirroring .kilo/skill into
-    `.opencode/skills/` while `.claude/skills/` already carries the same IDs
-    registers every skill twice, so OpenCode relies on `.claude/skills/` alone.
-    This deletes the redundant mirror left behind by older harness versions.
+    OpenCode loads `.opencode/skills/` plus the Claude-compatible
+    `.claude/skills/`, so the same skill id in both registers twice. The
+    `.opencode/skills/` directory itself is now used for instruction-derived
+    skills (see generate_instruction_skills), so only mirror ids are pruned --
+    never the whole directory.
     """
     dst = opencode_root / "skills"
-    if dst.exists():
-        shutil.rmtree(dst)
-        print("  [PRUNE] skills/ (duplicate of .claude/skills — removed)")
-        return 1
-    print("  [OK] skills/ absent (OpenCode reads .claude/skills/)")
-    return 0
+    src = kilo_root / "skill"
+    if not dst.is_dir() or not src.is_dir():
+        print("  [OK] no skill mirror to prune")
+        return 0
+    kilo_ids = {p.name for p in src.iterdir() if p.is_dir()}
+    removed = 0
+    for d in sorted(p for p in dst.iterdir() if p.is_dir()):
+        if d.name in kilo_ids:
+            shutil.rmtree(d)
+            print(f"  [PRUNE] skills/{d.name}/ (mirrors .kilo/skill — already in .claude/skills)")
+            removed += 1
+    if not removed:
+        print("  [OK] no skill mirror to prune")
+    return removed
 
 
 def prune_instructions(opencode_root: Path) -> int:
@@ -360,7 +372,7 @@ def prune_instructions(opencode_root: Path) -> int:
 
     v1 loaded instruction files through the `instructions` config glob. v2 does
     not resolve that field and reads only `AGENTS.md`, so the mirror is dead
-    weight; embed_instructions() inlines the bodies into AGENTS.md instead.
+    weight; generate_instruction_skills() emits them as on-demand skills.
     """
     dst = opencode_root / "instruction"
     if dst.exists():
@@ -371,40 +383,82 @@ def prune_instructions(opencode_root: Path) -> int:
     return 0
 
 
-def embed_instructions(kilo_root: Path, root_dir: Path) -> int:
-    """Inline .kilo/instruction/*.md bodies into the root AGENTS.md.
+def _yaml_quote(value: str) -> str:
+    """Return `value` as a YAML double-quoted scalar."""
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
 
-    OpenCode v2 loads only AGENTS.md (global + project, nested on demand); the
-    `instructions` config array is accepted but not resolved. The block is
-    delimited by markers so regeneration is idempotent and never touches the
-    hand-written rulebook around it.
+
+def _instruction_skill_doc(path: Path) -> tuple[str, str]:
+    """Derive (name, description) for an instruction-derived skill.
+
+    The name comes from the first `# Heading`; the description from the
+    leading `> ...` usage note (the "Auto-loaded when ..." line), otherwise the
+    first non-heading line.
+    """
+    text = path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    name = path.stem
+    for line in lines:
+        if line.startswith("# "):
+            name = line[2:].strip()
+            break
+    description = ""
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("> "):
+            description = stripped[2:].strip()
+            break
+    if not description:
+        for line in lines:
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                description = stripped
+                break
+    if not description:
+        description = f"Project instruction rules from {path.name}"
+    return name, description
+
+
+def generate_instruction_skills(kilo_root: Path, opencode_root: Path) -> int:
+    """Emit .kilo/instruction/*.md as on-demand OpenCode v2 skills.
+
+    v2 loads only AGENTS.md for always-on guidance; file-type rules are better
+    modelled as skills, which v2 advertises by description and loads only when
+    relevant (docs: Skills). Each instruction file becomes
+    `.opencode/skills/<stem>/SKILL.md`. The stems were checked against the
+    `.claude/skills` mirror, so ids never collide there. Skill dirs whose
+    source instruction was removed are pruned.
     """
     src_dir = kilo_root / "instruction"
-    agents_md = root_dir / "AGENTS.md"
+    dst_dir = opencode_root / "skills"
     if not src_dir.is_dir():
         print(f"[ERROR] Source instruction directory not found: {src_dir}")
         return 1
-    if not agents_md.is_file():
-        print(f"[ERROR] AGENTS.md not found: {agents_md}")
-        return 1
-
-    blocks = []
-    for f in sorted(src_dir.glob("*.md")):
-        body = f.read_text(encoding="utf-8").rstrip()
-        blocks.append(f"### {f.name}\n\n{body}")
-    section = f"{_AGENTS_MARKER_BEGIN}\n\n" + "\n\n".join(blocks) + f"\n\n{_AGENTS_MARKER_END}"
-
-    text = agents_md.read_text(encoding="utf-8")
-    pattern = re.compile(
-        re.escape(_AGENTS_MARKER_BEGIN) + r".*?" + re.escape(_AGENTS_MARKER_END),
-        re.DOTALL,
-    )
-    if pattern.search(text):
-        new_text = pattern.sub(lambda _: section, text)
-    else:
-        new_text = text.rstrip() + "\n\n" + section + "\n"
-    _write_if_changed(agents_md, new_text)
-    print(f"OpenCode instructions embedded into AGENTS.md: {len(blocks)} file(s)")
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    generated = 0
+    expected: set[str] = set()
+    for src in sorted(src_dir.glob("*.md")):
+        expected.add(src.stem)
+        name, description = _instruction_skill_doc(src)
+        body = src.read_text(encoding="utf-8").rstrip()
+        content = (
+            "---\n"
+            f"name: {_yaml_quote(name)}\n"
+            f"description: {_yaml_quote(description)}\n"
+            "---\n\n"
+            f"{body}\n"
+        )
+        skill_dir = dst_dir / src.stem
+        skill_dir.mkdir(parents=True, exist_ok=True)
+        _write_if_changed(skill_dir / "SKILL.md", content)
+        generated += 1
+        print(f"  [GEN] skills/{src.stem}/SKILL.md")
+    for existing in sorted(p for p in dst_dir.iterdir() if p.is_dir()):
+        if existing.name not in expected:
+            shutil.rmtree(existing)
+            print(f"  [PRUNE] skills/{existing.name}/ (no source instruction)")
+    print(f"OpenCode instruction skills generated: {generated}")
     return 0
 
 
@@ -415,49 +469,66 @@ def generate_opencode_json(
 ) -> int:
     """Write root opencode.json in the OpenCode v2 schema.
 
-    - `providers.commandcode` is declared in-repo (self-contained) instead of
-      relying on the retired v1 plugin `commandcode-go-opencode-provider`. The
-      model keys match the harness's existing `commandcode/<id>` references,
-      and `modelID` maps back to the upstream Command Code catalog id.
-    - `permissions` is v2's ordered array (last match wins) replacing v1's
-      `permission` object, using `shell`/`subagent` action names.
-    - `instructions` is omitted: v2 does not resolve it; see embed_instructions.
+    The config is split across two files because the host IDE's OpenCode v1
+    (`kilo.exe`) strictly validates the root `opencode.json` and hard-rejects
+    v2-only keys:
+      - root `opencode.json` -> v1-safe keys only (`$schema`, `model`,
+        `small_model`, `default_agent`, `agents`, `permission`), so
+        `kilo config check` stays clean.
+      - `.opencode/opencode.json` -> the v2-only self-contained
+        `providers.commandcode` block (replacing the retired v1 plugin
+        `commandcode-go-opencode-provider`). OpenCode v2 merges this file with
+        higher precedence; Kilo's validator ignores it.
+
+    The gate uses the legacy `permission` object (not v2's `permissions`
+    array) for the same reason: Kilo's bundled v1 rejects `permissions`, while
+    OpenCode v2 maps and enforces the legacy shape (see _BASE_BASH_RULES).
 
     `disabled_skills` maps skill name -> action for skills whose Kilo/Claude
-    frontmatter sets `disable-model-invocation: true`. OpenCode ignores that
-    field and has no user-only skill invocation, so the closest faithful
-    mapping is `permissions` entries with action `skill` and effect `ask`.
+    frontmatter sets `disable-model-invocation: true`; it becomes
+    `permission.skill[name] = "ask"`.
     """
-    permissions = [dict(rule) for rule in _BASE_PERMISSION_RULES]
+    permission: dict[str, Any] = {
+        "edit": "ask",
+        "external_directory": "ask",
+        "bash": dict(_BASE_BASH_RULES),
+    }
     if disabled_skills:
-        # "*" first, specific rules last (v2: last matching rule wins).
-        permissions.append({"action": "skill", "resource": "*", "effect": "allow"})
+        # "*" first, specific rules last (last matching rule wins).
+        skill_rules: dict[str, str] = {"*": "allow"}
         for name in sorted(disabled_skills):
-            permissions.append(
-                {"action": "skill", "resource": name, "effect": disabled_skills[name]}
-            )
+            skill_rules[name] = disabled_skills[name]
+        permission["skill"] = skill_rules
 
-    config: dict[str, Any] = {
+    root_config: dict[str, Any] = {
         "$schema": "https://opencode.ai/config.json",
         "model": _DEFAULT_MODEL,
         "small_model": _SMALL_MODEL,
         "default_agent": "solo-code-engineer",
         "agents": {"solo-code-engineer": {"model": _DEFAULT_MODEL}},
+        "permission": permission,
+    }
+    local_config: dict[str, Any] = {
+        "$schema": "https://opencode.ai/config.json",
         "providers": {
             _PROVIDER_ID: {
                 "name": "Command Code",
                 "env": ["COMMANDCODE_API_KEY"],
                 "package": "@opencode/ai/providers/openai-compatible",
-                "settings": {"baseURL": "{env:COMMANDCODE_BASE_URL}"},
+                # v2 rejects `{env:NAME}` references in *project* config
+                # (only global config may use them). `${NAME}` is the
+                # server-environment placeholder and is accepted here; the
+                # launcher exports COMMANDCODE_BASE_URL to that server.
+                "settings": {"baseURL": "${COMMANDCODE_BASE_URL}"},
                 "models": _PROVIDER_MODELS,
             }
         },
-        "permissions": permissions,
     }
-    dst = root_dir / "opencode.json"
-    _write_if_changed(dst, json.dumps(config, indent=2) + "\n")
+    opencode_root.mkdir(parents=True, exist_ok=True)
+    _write_if_changed(root_dir / "opencode.json", json.dumps(root_config, indent=2) + "\n")
+    _write_if_changed(opencode_root / "opencode.json", json.dumps(local_config, indent=2) + "\n")
     note = f" ({len(disabled_skills)} skill permission rule(s))" if disabled_skills else ""
-    print(f"OpenCode config generated: opencode.json{note}")
+    print(f"OpenCode config generated: opencode.json + .opencode/opencode.json{note}")
     return 0
 
 
@@ -474,10 +545,10 @@ def generate_all(
     print("--- OpenCode commands ---")
     generate_commands(kilo_root, opencode_root)
     print("--- OpenCode skills ---")
-    prune_duplicate_skills(opencode_root)
+    prune_duplicate_skills(kilo_root, opencode_root)
     print("--- OpenCode instructions ---")
     prune_instructions(opencode_root)
-    embed_instructions(kilo_root, root_dir)
+    generate_instruction_skills(kilo_root, opencode_root)
     print("--- OpenCode config ---")
     generate_opencode_json(opencode_root, root_dir, collect_disabled_skills(kilo_root))
     return 0

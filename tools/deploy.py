@@ -181,10 +181,10 @@ DIRS_CLAUDE = [
 
 DIRS_OPENCODE = [
     ".opencode",
-    # OpenCode natively loads the Claude-compatible `.claude/skills/` location
-    # and no longer mirrors skills into `.opencode/skills/` (a second copy
-    # would register every skill twice). Ship that location so an OpenCode-only
-    # deploy still has a skills source.
+    # `.opencode/skills/` (instruction-derived, on-demand skills) ships inside
+    # `.opencode`. The .kilo/skill library is not mirrored there — OpenCode
+    # loads it from the Claude-compatible `.claude/skills/`, so ship that
+    # location too.
     ".claude/skills",
     ".github",
     ".contracts",

@@ -17,10 +17,11 @@ generated_at = "2026-09-11T00:00:00Z"
 # .opencode/  -> first-class primary agent engine, now targeting OpenCode v2
 #                (@opencode/cli + @opencode/plugin; the v1 line opencode-ai /
 #                @opencode-ai/plugin is retired). tools/opencode_engine.py
-#                regenerates agents (Kilo `permission:` -> v2 `permissions:`
-#                arrays), commands, and a v2 opencode.json (`providers` +
-#                ordered `permissions`), and embeds .kilo/instruction/*.md
-#                into root AGENTS.md because v2 loads only AGENTS.md.
+#                regenerates agents, commands, on-demand skills under
+#                `.opencode/skills/` for `.kilo/instruction/*.md`, and a config
+#                split across root `opencode.json` (v1-safe: model + legacy
+#                `permission`) and `.opencode/opencode.json` (v2-only
+#                `providers`) so the host IDE's bundled OpenCode v1 stays clean.
 # .copilot/   -> NOT auto-generated. Manually kept in parity with .kilo/
 #                (source of truth); verified by tools/garden.py drift checks.
 # codex       -> direct CLI integration via codex-env.ps1 and tools/codex_*.py.

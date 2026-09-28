@@ -561,29 +561,34 @@ def check_opencode(src: Path, dst: Path) -> list[str]:
       .kilo/agents  -> .opencode/agents  (Kilo `permission:` object rewritten
                      to v2 ordered `permissions:` arrays)
       .kilo/command -> .opencode/commands (plural, copied verbatim)
-      .kilo/instruction -> NOT mirrored; v2 loads only AGENTS.md, so the bodies
-                     are embedded into the root AGENTS.md between markers.
-    Skills are NOT mirrored: v2 loads .opencode/skills/, .claude/skills/ and
-    .agents/skills/, so mirroring would register every skill twice; the engine
-    relies on .claude/skills/ alone (this check flags a stray .opencode/skills/).
-    Plus opencode.json (v2 model default + providers + permissions array).
+      .kilo/instruction -> .opencode/skills/<id>/SKILL.md (on-demand skills;
+                     v2 loads only AGENTS.md for always-on rules)
+    The .kilo/skill/* library is NOT mirrored: v2 loads .opencode/skills/,
+    .claude/skills/ and .agents/skills/, so a mirror of the same ids would
+    register every skill twice; those load from .claude/skills/ alone (this
+    check flags mirror ids under .opencode/skills/).
+    Plus root opencode.json (v1-safe: model default + legacy `permission`) and
+    .opencode/opencode.json (v2-only `providers`).
     """
     issues: list[str] = []
 
     # Agents (same subdir name; frontmatter drops unknown keys, so name parity only)
     issues.extend(_check_parity_dir(src, dst, ".opencode", "agents"))
 
-    # Skills: OpenCode must NOT carry its own mirror. It loads .opencode/skills
-    # AND .claude/skills, and requires unique names, so a stray .opencode/skills
-    # registers every skill twice. OpenCode relies on .claude/skills instead.
+    # Skills: `.opencode/skills/` holds instruction-derived on-demand skills and
+    # must NOT mirror .kilo/skill/* -- those already load from .claude/skills/.
     dst_skills = dst / "skills"
-    if dst_skills.exists():
-        issues.append(
-            "Duplicate skills: .opencode/skills exists — OpenCode already loads "
-            ".claude/skills (run 'python tools/generate_harness.py --harness opencode')"
-        )
     if not (ROOT / ".claude" / "skills").is_dir():
         issues.append("Missing skills source: .claude/skills (OpenCode-compatible location)")
+    src_skill = src / "skill"
+    if dst_skills.is_dir() and src_skill.is_dir():
+        kilo_ids = {p.name for p in src_skill.iterdir() if p.is_dir()}
+        for d in sorted(p for p in dst_skills.iterdir() if p.is_dir()):
+            if d.name in kilo_ids:
+                issues.append(
+                    f"Duplicate skill: .opencode/skills/{d.name} mirrors .kilo/skill/{d.name} "
+                    "(already loaded from .claude/skills — remove the mirror)"
+                )
 
     # Commands: .kilo/command/*.md must exist in .opencode/commands/*.md
     src_cmd = src / "command"
@@ -597,23 +602,33 @@ def check_opencode(src: Path, dst: Path) -> list[str]:
             issues.append(f"Stale command (no source): .opencode/commands/{name}")
 
     # Instructions: v2 resolves only AGENTS.md, so the v1 .opencode/instruction/
-    # mirror must be gone and the generated block must appear in root AGENTS.md
-    # (see opencode_engine.embed_instructions).
+    # mirror must be gone and each .kilo/instruction/*.md must appear as an
+    # on-demand skill (see opencode_engine.generate_instruction_skills).
     if (dst / "instruction").exists():
         issues.append(
-            "Stale mirror: .opencode/instruction exists — v2 loads AGENTS.md "
-            "(run 'python tools/generate_harness.py --harness opencode')"
+            "Stale mirror: .opencode/instruction exists — instructions are "
+            "emitted as skills (run "
+            "'python tools/generate_harness.py --harness opencode')"
         )
+    src_instr = src / "instruction"
+    if src_instr.is_dir():
+        dst_ids = (
+            {p.name for p in dst_skills.iterdir() if p.is_dir()}
+            if dst_skills.is_dir()
+            else set()
+        )
+        for f in sorted(src_instr.glob("*.md")):
+            if f.stem not in dst_ids:
+                issues.append(f"Missing instruction skill: .opencode/skills/{f.stem}/SKILL.md")
     agents_md = ROOT / "AGENTS.md"
     try:
         agents_text = agents_md.read_text(encoding="utf-8")
     except OSError:
         agents_text = ""
-    if agents_text.count("opencode-v2-inline-instructions") < 2:
+    if "opencode-v2-inline-instructions" in agents_text:
         issues.append(
-            "Missing embedded instructions: AGENTS.md has no opencode-v2 "
-            "inline-instructions block (run "
-            "'python tools/generate_harness.py --harness opencode')"
+            "Legacy embedded instructions: AGENTS.md still carries the inline "
+            "instructions block (instructions are now on-demand skills)"
         )
 
     # Static engine config

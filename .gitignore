@@ -17,8 +17,8 @@ tools/_version.py
 # Node
 node_modules/
 
-# OpenCode local plugin-list config — the real config is /opencode.json
-.opencode/opencode.json
+# NOTE: .opencode/opencode.json is TRACKED — it carries the OpenCode v2
+# `providers` block; the root opencode.json stays v1-safe for Kilo Code.
 
 # Environment secrets
 .env

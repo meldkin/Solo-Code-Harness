@@ -296,13 +296,48 @@ def test_generated_opencode_json_gates_disabled_skills(tmp_path):
 
     data = json.loads((tmp_path / "opencode.json").read_text(encoding="utf-8"))
     assert data["default_agent"] == "solo-code-engineer"
-    skill_rules = [r for r in data["permissions"] if r["action"] == "skill"]
-    # "*" is listed first so the specific rule wins (v2: last match wins).
-    assert skill_rules[0] == {"action": "skill", "resource": "*", "effect": "allow"}
-    assert {"action": "skill", "resource": "guard", "effect": "ask"} in skill_rules
+    # Legacy `permission` object (Kilo's bundled OpenCode v1 rejects `permissions`).
+    assert "permissions" not in data
+    # v2-only `providers` is split out of the root file into .opencode/.
+    assert "providers" not in data
+    local = json.loads((tmp_path / ".opencode" / "opencode.json").read_text(encoding="utf-8"))
+    assert "commandcode" in local["providers"]
+    skill_rules = data["permission"]["skill"]
+    assert list(skill_rules)[0] == "*"
+    assert skill_rules["*"] == "allow"
+    assert skill_rules["guard"] == "ask"
 
 
 def test_generated_opencode_json_omits_skill_block_without_flags(tmp_path):
     opencode_engine.generate_opencode_json(tmp_path / ".opencode", tmp_path, {})
     data = json.loads((tmp_path / "opencode.json").read_text(encoding="utf-8"))
-    assert all(r["action"] != "skill" for r in data["permissions"])
+    assert "skill" not in data["permission"]
+    assert "providers" not in data
+
+
+# ─── opencode engine: instruction -> on-demand skill mapping ─────────────────
+
+def test_generate_instruction_skills_emits_frontmatter(tmp_path):
+    kilo = tmp_path / ".kilo"
+    _write(
+        kilo / "instruction" / "rules-python.md",
+        "# Python Rules\n\n> Auto-loaded when editing .py files.\n\nBody line.\n",
+    )
+    assert opencode_engine.generate_instruction_skills(kilo, tmp_path / ".opencode") == 0
+    doc = (
+        tmp_path / ".opencode" / "skills" / "rules-python" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    assert doc.startswith("---\n")
+    assert 'name: "Python Rules"' in doc
+    assert 'description: "Auto-loaded when editing .py files."' in doc
+    assert "Body line." in doc
+
+
+def test_generate_instruction_skills_prunes_removed_source(tmp_path):
+    kilo = tmp_path / ".kilo"
+    _write(kilo / "instruction" / "a.md", "# A\n\n> d\n\nbody\n")
+    assert opencode_engine.generate_instruction_skills(kilo, tmp_path / ".opencode") == 0
+    assert (tmp_path / ".opencode" / "skills" / "a" / "SKILL.md").exists()
+    (kilo / "instruction" / "a.md").unlink()
+    assert opencode_engine.generate_instruction_skills(kilo, tmp_path / ".opencode") == 0
+    assert not (tmp_path / ".opencode" / "skills" / "a").exists()
