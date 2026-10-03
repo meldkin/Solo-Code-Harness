@@ -171,6 +171,10 @@ def check_ratchet(budget: dict[str, float], current: dict[str, float]) -> tuple[
 
 
 def main() -> int:
+    if "--help" in sys.argv or "-h" in sys.argv:
+        print(__doc__.strip())
+        return 0
+
     if "--update" in sys.argv:
         print("Running coverage...")
         try:

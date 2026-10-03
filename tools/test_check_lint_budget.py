@@ -159,6 +159,29 @@ def test_main_fails_on_malformed_budget(monkeypatch, capsys):
     assert "bad budget" in capsys.readouterr().out
 
 
+def test_main_help_flag(monkeypatch, capsys):
+    """--help prints usage docstring, exits 0, and does NOT call count_findings()."""
+    def boom(*a, **k):
+        raise AssertionError("expensive linter path count_findings() must not be called on --help")
+    monkeypatch.setattr(budget, "count_findings", boom)
+    monkeypatch.setattr(sys, "argv", ["check_lint_budget.py", "--help"])
+    assert budget.main() == 0
+    out = capsys.readouterr().out
+    assert "Lint Budget" in out
+    assert "--list" in out
+
+
+def test_main_short_help_flag(monkeypatch, capsys):
+    """-h prints usage docstring, exits 0, and does NOT call count_findings()."""
+    def boom(*a, **k):
+        raise AssertionError("expensive linter path count_findings() must not be called on -h")
+    monkeypatch.setattr(budget, "count_findings", boom)
+    monkeypatch.setattr(sys, "argv", ["check_lint_budget.py", "-h"])
+    assert budget.main() == 0
+    out = capsys.readouterr().out
+    assert "Lint Budget" in out
+
+
 # --- the shipped budget ------------------------------------------------------
 
 

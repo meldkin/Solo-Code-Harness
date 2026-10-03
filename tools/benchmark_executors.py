@@ -50,13 +50,14 @@ def calc(a,b,op):
 ```
 
 Make it: use dict dispatch, add type hints, handle errors properly, docstring.""",
-        "setup": """cat > temp_messy.py << 'EOF'
-def calc(a,b,op):
+        "setup": {
+            "temp_messy.py": """def calc(a,b,op):
     if op=='add':return a+b
     elif op=='sub':return a-b
     elif op=='mul':return a*b
     elif op=='div':return a/b if b!=0 else None
-EOF""",
+""",
+        },
         "verify": "python -c 'import temp_messy'",
         "expected_file": "temp_messy.py",
         "complexity": "medium",
@@ -73,12 +74,13 @@ def parse_version(ver: str) -> tuple[int, int, int]:
 ```
 
 Create temp_test_util.py with 4 test cases: valid, invalid format, missing parts, extra parts.""",
-        "setup": """cat > temp_util.py << 'EOF'
-def parse_version(ver: str) -> tuple[int, int, int]:
+        "setup": {
+            "temp_util.py": """def parse_version(ver: str) -> tuple[int, int, int]:
     \"\"\"Parse semantic version string like '1.2.3' into (1, 2, 3).\"\"\"
     parts = ver.split('.')
     return tuple(int(p) for p in parts)
-EOF""",
+""",
+        },
         "verify": "python -m pytest temp_test_util.py -v",
         "expected_file": "temp_test_util.py",
         "complexity": "medium",
@@ -152,6 +154,23 @@ class BenchmarkResult:
 
 # ── Runner ───────────────────────────────────────────────────────────────────
 
+def setup_task(task: dict[str, Any]) -> None:
+    """Prepare filesystem fixtures before running a benchmark task."""
+    if "setup" not in task:
+        return
+    setup_val = task["setup"]
+    if isinstance(setup_val, dict):
+        for file_path, content in setup_val.items():
+            Path(file_path).write_text(content, encoding="utf-8")
+    elif isinstance(setup_val, str):
+        subprocess.run(
+            shlex.split(setup_val),
+            capture_output=True,
+            check=False,
+            shell=False,
+        )
+
+
 def run_task_with_model(
     task_name: str,
     task: dict[str, Any],
@@ -162,14 +181,7 @@ def run_task_with_model(
     print(f"  [{model_display}] {task_name}...", end="", flush=True)
 
     # Setup if needed
-    if "setup" in task:
-        # S602: Use list args instead of shell=True for security
-        subprocess.run(
-            shlex.split(task["setup"]),
-            capture_output=True,
-            check=False,
-            shell=False,
-        )
+    setup_task(task)
 
     # Run OpenCode delegation
     start = time.monotonic()

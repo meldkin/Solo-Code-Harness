@@ -76,23 +76,6 @@ High-signal context loaded at session start. Detailed history belongs in
   `approval_policy = "never"`. Added verified write path to `tools/codex_guard.py`
   (`--write` flag with secret scanning and shared state file locking) alongside
   native `apply_patch` (2026-09-25).
-- [decision] OpenCode v2 rejects V1 plugins by construction — the plugin API is
-  the only intentional breaking change. A V1 default export
-  (`export default function(){ return { config, auth } }`) raises
-  `PluginModule.LoadError: Plugin must export a default definition with an id and
-  an effect or setup function`. Verified on `commandcode-go-opencode-provider@0.4.0`
-  under `@opencode/cli@2.0.18`: it can never load, which is why the harness
-  retired it. Log lives at `~/.local/share/opencode/log/opencode.log`
-  (grep `failed to load plugin`). The global `~/.config/opencode/opencode.jsonc`
-  was migrated to V2-native `providers` (freemodel) with the plugin entry and its
-  empty `commandcode` stub removed (2026-09-27).
-- [decision] `opencode.json` keeps `$schema: https://opencode.ai/config.json`
-  even though that published schema is still V1-shaped (`agent`/`provider`/
-  `permission` singular, `additionalProperties: false`). The V2 runtime reads the
-  plural keys this engine emits, so the runtime is authoritative and the editor
-  may flag three properties until upstream publishes a V2 schema. No V2 schema URL
-  exists yet (`/v2/config.json`, `/config.v2.json`, `/schema/v2/config.json` all
-  404). (2026-09-28)
 - [decision] CommandCode model ids are verified against
   `GET {COMMANDCODE_BASE_URL}/models`, never from memory: the catalog drifts and
   the old `api-providers.md` advertised nine ids that no longer resolve. Each
@@ -102,19 +85,6 @@ High-signal context loaded at session start. Detailed history belongs in
   upstream id (`commandcode/deepseek/deepseek-v4-pro`) while OpenCode refs use the
   harness key (`commandcode/deepseek-v4-pro`) — both correct for their dialect.
   `context_length` comes from the `/models` response, not the file. (2026-09-28)
-- [decision] Removed the retired OpenCode v1 install from this machine:
-  `opencode-ai@1.18.31` (npm global), `~/.opencode/` (a 224 MB self-updating
-  install holding `bin/opencode.exe` v1.18.31 plus its own `node_modules`) and
-  the now-dangling `~/.opencode/bin` entry in the User PATH. v2 stores nothing
-  there — config `~/.config/opencode`, data `~/.local/share/opencode`, cache and
-  binaries `~/.cache/opencode/bin`, state `~/.local/state/opencode` (per
-  `opencode debug paths`). Gotcha: `npm uninstall -g opencode-ai` also deletes
-  the `opencode` / `opencode.cmd` / `opencode.ps1` shims in the npm bin dir that
-  `@opencode/cli` needs, and `opencode` then falls through to whatever is next on
-  PATH. Restore them from the byte-identical `opencode2*` wrappers that
-  `@opencode/cli` also installs, or reinstall the package. The guards in
-  `opencode-env.ps1` and `tools/opencode_delegate.py` stay — they are now
-  defensive rather than reparative. (2026-09-28)
 - [decision] The OpenCode `freemodel` provider was broken on three independent
   layers, each measured 2026-10-03 by experiment:
   1. `settings.baseURL` was `${OPENAI_BASE_URL}`, but `opencode-env.ps1` strips

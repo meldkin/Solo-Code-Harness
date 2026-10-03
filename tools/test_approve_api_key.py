@@ -180,6 +180,16 @@ def test_launcher_runs_the_preflight():
     assert "--check" in script
 
 
+def test_launcher_loads_env_relative_to_itself_and_approves_gateway_key():
+    """Interactive gateway sessions must not depend on the caller's cwd or OAuth."""
+    script = (ROOT / "claude-env.ps1").read_text(encoding="utf-8")
+    assert 'Split-Path -Parent $MyInvocation.MyCommand.Path' in script
+    assert 'Join-Path $scriptRoot ".env"' in script
+    assert '$approver = Join-Path $scriptRoot "tools\\approve_api_key.py"' in script
+    assert 'if ($profile -eq "gateway")' in script
+    assert '& python $approver --apply' in script
+
+
 def test_the_fixer_is_deployed_to_target_projects():
     """The check is useless if the script it names is not there to run. This
     was the original failure: the fixer lived only in Solo-Code-CLI."""

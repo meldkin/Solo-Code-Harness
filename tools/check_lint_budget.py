@@ -76,6 +76,10 @@ def count_findings(root: Path = ROOT) -> tuple[int, str]:
 
 
 def main() -> int:
+    if "--help" in sys.argv or "-h" in sys.argv:
+        print(__doc__.strip())
+        return 0
+
     if "--list" in sys.argv:
         _, raw = count_findings()
         print(raw or "(no findings)")

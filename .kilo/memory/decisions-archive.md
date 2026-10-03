@@ -369,3 +369,36 @@ created: 2026-07-24
   $20/month buys a $20 allowance per rolling 5h window capped at $132/week
   (~$572/month of list-price value), so break-even is $4.62/week of value.
   Terra list prices used: $2/M in, $12/M out, $0.2/M cached.
+
+- [decision] 2026-09-27: OpenCode v2 rejects V1 plugins by construction — the plugin API is
+  the only intentional breaking change. A V1 default export
+  (`export default function(){ return { config, auth } }`) raises
+  `PluginModule.LoadError: Plugin must export a default definition with an id and
+  an effect or setup function`. Verified on `commandcode-go-opencode-provider@0.4.0`
+  under `@opencode/cli@2.0.18`: it can never load, which is why the harness
+  retired it. Log lives at `~/.local/share/opencode/log/opencode.log`
+  (grep `failed to load plugin`). The global `~/.config/opencode/opencode.jsonc`
+  was migrated to V2-native `providers` (freemodel) with the plugin entry and its
+  empty `commandcode` stub removed.
+
+- [decision] 2026-09-28: `opencode.json` keeps `$schema: https://opencode.ai/config.json`
+  even though that published schema is still V1-shaped (`agent`/`provider`/
+  `permission` singular, `additionalProperties: false`). The V2 runtime reads the
+  plural keys this engine emits, so the runtime is authoritative and the editor
+  may flag three properties until upstream publishes a V2 schema. No V2 schema URL
+  exists yet (`/v2/config.json`, `/config.v2.json`, `/schema/v2/config.json` all
+  404).
+
+- [decision] 2026-09-28: Removed the retired OpenCode v1 install from this machine:
+  `opencode-ai@1.18.31` (npm global), `~/.opencode/` (a 224 MB self-updating
+  install holding `bin/opencode.exe` v1.18.31 plus its own `node_modules`) and
+  the now-dangling `~/.opencode/bin` entry in the User PATH. v2 stores nothing
+  there — config `~/.config/opencode`, data `~/.local/share/opencode`, cache and
+  binaries `~/.cache/opencode/bin`, state `~/.local/state/opencode` (per
+  `opencode debug paths`). Gotcha: `npm uninstall -g opencode-ai` also deletes
+  the `opencode` / `opencode.cmd` / `opencode.ps1` shims in the npm bin dir that
+  `@opencode/cli` needs, and `opencode` then falls through to whatever is next on
+  PATH. Restore them from the byte-identical `opencode2*` wrappers that
+  `@opencode/cli` also installs, or reinstall the package. The guards in
+  `opencode-env.ps1` and `tools/opencode_delegate.py` stay — they are now
+  defensive rather than reparative.

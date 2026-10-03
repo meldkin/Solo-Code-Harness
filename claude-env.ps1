@@ -75,9 +75,10 @@ for ($i = 0; $i -lt $claudeArgs.Count; $i++) {
     [void]$normalizedArgs.Add($arg)
 }
 
-$envFile = Join-Path (Get-Location) ".env"
+$scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$envFile = Join-Path $scriptRoot ".env"
 if (-not (Test-Path $envFile)) {
-    Write-Error "Missing .env in current directory: $envFile"
+    Write-Error "Missing .env beside claude-env.ps1: $envFile"
     exit 1
 }
 
@@ -117,7 +118,7 @@ if (Test-Path $settingsPath) {
     try { $settings = Get-Content -Raw $settingsPath | ConvertFrom-Json } catch { }
 }
 $hasApiKeyHelper = ($settings -and $settings.apiKeyHelper)
-if ($hasApiKeyHelper -and $env:ANTHROPIC_API_KEY) {
+if (($profile -ne "gateway") -and $hasApiKeyHelper -and $env:ANTHROPIC_API_KEY) {
     Write-Warning "apiKeyHelper detected -- unsetting ANTHROPIC_API_KEY to avoid auth conflict."
     Remove-Item Env:ANTHROPIC_API_KEY -ErrorAction SilentlyContinue
 }
@@ -132,9 +133,21 @@ if (($profile -eq "gateway") -and (-not $env:ANTHROPIC_BASE_URL)) {
     exit 1
 }
 
-$approver = Join-Path (Get-Location) "tools\approve_api_key.py"
+$approver = Join-Path $scriptRoot "tools\approve_api_key.py"
 if ((Test-Path $approver) -and $env:ANTHROPIC_API_KEY) {
-    & python $approver --check
+    if ($profile -eq "gateway") {
+        # Gateway mode is an explicit opt-in to the key from .env. Approve it
+        # before starting an interactive session so Claude Code does not fall
+        # through to its native OAuth login flow.
+        & python $approver --apply
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Could not approve the FreeModel API key for Claude Code."
+            exit $LASTEXITCODE
+        }
+    }
+    else {
+        & python $approver --check
+    }
 }
 
 if ($profile -eq "gateway") {
