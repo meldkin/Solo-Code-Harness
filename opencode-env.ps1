@@ -9,7 +9,7 @@
 # Usage:
 #   .\opencode-env.ps1                                # interactive OpenCode TUI
 #   .\opencode-env.ps1 run "run the tests"            # non-interactive command
-#   .\opencode-env.ps1 -m freemodel/gpt-5.6-terra     # specify model directly
+#   .\opencode-env.ps1 run -m freemodel/gpt-6-sol     # specify model directly
 #   .\opencode-env.ps1 --help                         # pass-through flags
 
 $ErrorActionPreference = "Stop"
@@ -47,14 +47,17 @@ foreach ($entry in $config.GetEnumerator()) {
     }
 }
 
-# Export OpenAI / FreeModel credentials
+# Export OpenAI / FreeModel credentials. FREEMODEL_API_KEY is what the
+# `.opencode/opencode.json` freemodel provider reads; OPENAI_API_KEY stays for
+# Codex and OpenCode's built-in OpenAI provider.
 if ($config.ContainsKey("OPENAI_API_KEY") -and $config["OPENAI_API_KEY"]) {
     $env:OPENAI_API_KEY = $config["OPENAI_API_KEY"]
     $env:FREEMODEL_API_KEY = $config["OPENAI_API_KEY"]
 }
 
-# Normalize OPENAI_BASE_URL: ensure it has no trailing /v1 or slashes
-# so {env:OPENAI_BASE_URL}/v1 in opencode config resolves reliably.
+# Normalize OPENAI_BASE_URL: strip any trailing /v1 or slashes, because both the
+# project config (`${OPENAI_BASE_URL}/v1`) and the global config
+# (`{env:OPENAI_BASE_URL}/v1`) append the /v1 path themselves.
 if ($config.ContainsKey("OPENAI_BASE_URL") -and $config["OPENAI_BASE_URL"]) {
     $baseUrl = $config["OPENAI_BASE_URL"].Trim().TrimEnd("/")
     if ($baseUrl.EndsWith("/v1")) {
@@ -118,18 +121,34 @@ if (-not $opencodeBin) {
 }
 
 $opencodeArgs = @($args)
-$exitCode = 1
-try {
-    & $opencodeBin @opencodeArgs
-    if ($null -ne $LASTEXITCODE) {
-        $exitCode = $LASTEXITCODE
-    }
-    else {
-        $exitCode = 0
+
+# FreeModel renamed the Codex model from gpt-5.6-terra to gpt-6-sol.
+# Keep older launcher invocations working while sending the current model ID.
+for ($index = 0; $index -lt $opencodeArgs.Count; $index++) {
+    if ($opencodeArgs[$index] -in @("freemodel/gpt-5.6-terra", "gpt-5.6-terra")) {
+        $opencodeArgs[$index] = $opencodeArgs[$index].Replace("gpt-5.6-terra", "gpt-6-sol")
     }
 }
-catch {
-    Write-Error $_
-    $exitCode = 1
+# `opencode` writes progress to stderr, and ErrorActionPreference = "Stop" turns
+# a native command's stderr into a terminating error in Windows PowerShell 5.1.
+# That made every launch exit 1 with an empty Write-Error, even successful runs.
+# Lower it for the native calls and rely on $LASTEXITCODE instead.
+$ErrorActionPreference = "Continue"
+
+# OpenCode prefers a credential saved in its own store over the provider's `env`
+# variable, so a stale stored FreeModel key silently shadows the .env key -- seen
+# as "Unauthorized - Invalid token" while the same .env key works via curl.
+# Remove it each launch so .env stays the single source of truth. Idempotent:
+# with nothing stored it just reports the FREEMODEL_API_KEY fallback and exits
+# non-zero, so the result is discarded.
+& $opencodeBin auth logout freemodel "API key" *> $null
+
+$exitCode = 1
+& $opencodeBin @opencodeArgs
+if ($null -ne $LASTEXITCODE) {
+    $exitCode = $LASTEXITCODE
+}
+else {
+    $exitCode = 0
 }
 exit $exitCode
