@@ -259,18 +259,21 @@ consider delegation, not an instruction to always delegate.
 
 | Work shape | Route to | Why |
 |---|---|---|
-| Read >5 files, then summarize/compare/audit | **Antigravity GUI handoff** | Large context through Gemini in Antigravity IDE |
-| Repo-wide survey — "where else does X appear?" | **OpenCode CLI** | Headless survey with large context models |
-| Independent review of a design or diff | **Antigravity GUI handoff** | A second model catches different things |
-| UI verification, screenshots, recordings | **Antigravity GUI handoff** | Visual inspection in the rendered IDE UI |
+| Read >5 files, then summarize/compare/audit | **Antigravity CLI** | Large context through a headless worker |
+| Repo-wide survey — "where else does X appear?" | **Antigravity CLI** | Breadth is exactly its edge |
+| Independent review of a design or diff | **Antigravity CLI** | A second model catches different things |
+| UI verification, screenshots, recordings | **Antigravity GUI handoff** | The CLI cannot verify a rendered UI |
 | Small mechanical edit, boilerplate, one test | **OpenCode CLI** | Headless — costs the user nothing |
-| Scoped code writing behind an explicit fence | **OpenCode CLI** | Requires explicit fence stated in writing |
+| Scoped code writing behind an explicit fence | Antigravity CLI if broad, OpenCode CLI if narrow | Both need the fence stated in writing |
 | Architecture / product / security decisions | **Neither — do it here** | Judgment is not delegable |
 | Anything needing this conversation's history | **Neither — do it here** | Workers are context-blind |
 
-OpenCode CLI and Kilo CLI are headless executors. Antigravity GUI handoff provides
-a manual relay protocol for UI verification, wide audits, or visual work via
-`.gemini/antigravity/handoff/`.
+OpenCode CLI, Kilo CLI, and Antigravity CLI are headless. **OpenCode CLI is the
+primary narrow executor and the orchestrator that plans and routes work**;
+Antigravity CLI executes read-heavy or broad scopes via
+`tools/antigravity_delegate.py`. Writes require `--auto-approve` and an explicit
+`--allow-dir`; the wrapper takes a shared-state directory lock and checks the
+post-run workspace scope. Antigravity GUI handoff remains a fallback for UI work.
 
 **Verification is mandatory.** Every controlled test of worker engines
 produced at least one error invisible in their own self-summary. Their
@@ -278,6 +281,56 @@ evidence is reliable; their self-assessment is not. Re-run their commands,
 run the real gates, and mutation-test any new check they write.
 
 Full decision guide: `.kilo/skill/gemini-delegation/SKILL.md`.
+
+### Delegating to Antigravity CLI
+
+Use the wrapper for normal headless work:
+
+```powershell
+# Read-only, generation only: no permission-skipping flag is sent.
+python tools/antigravity_delegate.py "<task>" --model gemini-3.8-flash-medium
+
+# Read-only WITH tool use (greps, tests, git status) but still no write scope.
+python tools/antigravity_delegate.py "<audit>" --allow-tools --model gemini-3.8-flash-medium
+
+# Write: explicit scope and opt-in auto approval are both required.
+python tools/antigravity_delegate.py "<task>" --allow-dir src --auto-approve --model gemini-3.8-flash-high
+```
+
+**Headless tool permissions.** A plain read-only run cannot prompt for the
+`command` permission, so a task that needs `run_command` is auto-denied. agy
+still reports `status: SUCCESS` in that case, so the wrapper now inspects
+`denied_actions` and per-tool errors and exits **5** instead of returning a
+silent empty success. Pass `--allow-tools` to auto-approve read/execute tools
+without a write scope; it does not take a directory lock and does not run the
+scope audit. `--allow-tools` cannot be combined with `--auto-approve`,
+`--allow-dir`, or `--no-guardrail`.
+
+**Pick the model by task complexity.** Gemini 3.8 Flash ships three reasoning
+levels as distinct model ids; all three draw the same account quota, so the
+cheapest one that fits the task is the right one:
+
+| Task complexity | Model id | Example |
+|---|---|---|
+| Mechanical, single-file, low reasoning | `gemini-3.8-flash-low` | Rename a symbol, reformat a table |
+| Default multi-file work | `gemini-3.8-flash-medium` | Summarize 10 files, apply a scoped refactor |
+| Hard reasoning, design-adjacent | `gemini-3.8-flash-high` | Independent design review, subtle bug hunt |
+
+**Account quota and manual rotation.** The worker authenticates with the
+machine-level Antigravity Google account and there is **no per-run account
+flag**. When that account exhausts Gemini quota, delegated runs fail until the
+user signs into a different account in the Antigravity IDE and re-auths; the
+CLI then inherits the new session. Resume an interrupted task with
+`--conversation <id>` (the wrapper prints the id) or `--continue-latest`.
+Rotation is serial, so do not queue unattended long batches across a quota
+boundary.
+
+The orchestrator must still inspect `git diff` and run the relevant tests,
+security scan, and checklist. Never use `--no-guardrail` with `--auto-approve`.
+The post-run scope check audits `--target-dir` only: it cannot see writes outside
+that directory and cannot undo a write. `--auto-approve` still passes
+`--dangerously-skip-permissions` to `agy.exe`, so `--allow-dir` is the fence, not
+a sandbox.
 
 ### Delegating to Antigravity GUI (manual fallback)
 
@@ -316,8 +369,10 @@ pasting plan/result text through chat:
 files in scope — Gemini edits the same working tree concurrently, and
 `acquire_lock()` returns `False` on a cross-engine conflict.
 
-`agy.exe` headless execution has been retired to avoid automated traffic flags
-on Google accounts. For Antigravity tasks, use the GUI handoff protocol above.
+For headless writes, do not bypass the wrapper's directory lock or guardrail.
+Use `agy.exe --print --output-format stream-json` through
+`tools/antigravity_delegate.py`. Full guide:
+`.kilo/skill/gemini-delegation/SKILL.md`.
 
 ## Git Commit Convention
 

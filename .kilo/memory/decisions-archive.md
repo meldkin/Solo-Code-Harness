@@ -402,3 +402,11 @@ created: 2026-07-24
   `@opencode/cli` also installs, or reinstall the package. The guards in
   `opencode-env.ps1` and `tools/opencode_delegate.py` stay — they are now
   defensive rather than reparative.
+
+- [decision] 2026-09-26: Feature/task state stays out of SQLite - eatures and
+  shared_memory_* remain unused (no hook or engine calls set_feature_status()).
+  AGENTS.md was still mandating the old API - requirement removed, API kept only
+  for back-compat. Two session stores are documented as distinct:
+  .solocode/shared-state.db (session_log + locks; writers pre_compact.py,
+  codex_session.py) vs .solocode/sessions.db (session lifecycle/analytics;
+  Claude hooks). Moved here 2026-10-06 to keep MEMORY.md under the 8,000-char gate.

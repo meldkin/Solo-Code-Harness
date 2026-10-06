@@ -52,16 +52,28 @@ High-signal context loaded at session start. Detailed history belongs in
 - [gotcha] `.pytest_temp` cleanup can race on Windows; rerun pytest if needed.
 
 ## Decisions
-- [decision] Feature/task state stays out of SQLite: `features` and
-  `shared_memory_*` remain unused (no hook or engine calls
-  `set_feature_status()`). `AGENTS.md` was still mandating the old API —
-  requirement removed, API kept only for back-compat. Two session stores are
-  documented as distinct: `.solocode/shared-state.db` (session_log + locks;
-  writers `pre_compact.py`, `codex_session.py`) vs `.solocode/sessions.db`
-  (session lifecycle/analytics; Claude hooks). (2026-09-26)
-- [decision] Antigravity headless `agy.exe` delegate retired to eliminate
-  automated bot traffic flags on user Google accounts. Antigravity workflow
-  is restricted to manual GUI inbox/outbox handoff protocol (2026-09-26).
+- [decision] Antigravity headless `agy.exe` delegate **re-established** after
+  the retirement rationale was disproven: the account lockouts were a
+  Google-side update bug, not bot-traffic flags from `agy.exe`; the accounts
+  were reopened and the CLI was never implicated (2026-10-06). Worker runs
+  through `tools/antigravity_delegate.py` — read-only by default, writes need
+  `--allow-dir` + `--auto-approve` with a shared-state directory lock and
+  post-run scope audit. Model is chosen by task complexity via the distinct ids
+  `gemini-3.8-flash-{low,medium,high}`. Quota rotation is manual: `agy.exe`
+  uses the machine-level Antigravity Google account and has no per-run account
+  flag, so exhausting quota means signing into another account in the IDE; the
+  wrapper prints `conversation=<id>` and resume uses `--conversation <id>` or
+  `--continue-latest`.
+- [decision] Antigravity headless permission behavior (measured 2026-10-06 on
+  `agy.exe` 1.2.9): a plain read-only run cannot answer the `command` permission
+  prompt, so `run_command` is auto-denied while `result.status` still says
+  `SUCCESS` with `denied_actions` populated. The wrapper now inspects
+  `denied_actions` and per-tool `ERROR` events and exits **5** (empty output
+  exits **2**) instead of a silent success. New `--allow-tools` flag grants
+  read/execute tool use without a write scope (no directory lock, no scope
+  audit); it is mutually exclusive with `--auto-approve`, `--allow-dir`, and
+  `--no-guardrail`. `view_file` works read-only with an absolute path;
+  `grep_search`/`list_dir` usage was unreliable at the low model tier.
 - [decision] Claude launchers default to full mode; `--bare` is explicit
   degraded mode.
 - [decision] OpenCode avoids duplicate skill mirrors and uses Claude-compatible

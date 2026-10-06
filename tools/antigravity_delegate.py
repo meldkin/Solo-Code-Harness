@@ -70,6 +70,8 @@ def parse_ndjson_events(output: str) -> dict[str, Any]:
         "status": None,
         "usage": None,
         "error": None,
+        "denied_actions": [],
+        "tool_errors": [],
     }
     deltas: list[str] = []
     saw_result = False
@@ -89,6 +91,16 @@ def parse_ndjson_events(output: str) -> dict[str, Any]:
             text_delta = step.get("text_delta")
             if isinstance(text_delta, str):
                 deltas.append(text_delta)
+            if step.get("step_type") == "tool" and step.get("state") == "ERROR":
+                tool_error = step.get("tool_info", {}).get("error", {})
+                result["tool_errors"].append(
+                    {
+                        "tool": step.get("tool_name"),
+                        "message": (tool_error.get("message") or "").splitlines()[0]
+                        if tool_error.get("message")
+                        else None,
+                    }
+                )
 
         if event.get("event") == "result":
             saw_result = True
@@ -96,6 +108,7 @@ def parse_ndjson_events(output: str) -> dict[str, Any]:
             result["response"] = final.get("response")
             result["status"] = final.get("status")
             result["usage"] = final.get("usage")
+            result["denied_actions"] = final.get("denied_actions") or []
             if final.get("status") != "SUCCESS":
                 result["error"] = final.get("error") or f"Antigravity result status: {final.get('status')}"
 
@@ -190,20 +203,36 @@ def paths_outside_directory(paths: list[str], allowed_dir: str) -> list[str]:
     return [path for path in paths if path != allowed_dir and not path.startswith(prefix)]
 
 
-def build_prompt(task: str, *, allow_dir: str | None, auto_approve: bool, guardrail: bool) -> str:
+def build_prompt(
+    task: str, *, allow_dir: str | None, auto_approve: bool, guardrail: bool, allow_tools: bool = False
+) -> str:
     """Create the worker prompt with the execution policy visible to the model."""
     policy = ""
     if guardrail:
         policy += GUARDRAIL
     if auto_approve:
         policy += f"Allowed write directory: {allow_dir}\n\n"
+    elif allow_tools:
+        policy += (
+            "READ-ONLY MODE: do not modify, create, delete, or rename files. You MAY run "
+            "read-only tool calls and shell commands (grep, listing, git status, tests) to "
+            "inspect the project.\n\n"
+        )
     else:
         policy += "READ-ONLY MODE: do not modify, create, delete, or rename files.\n\n"
     return policy + "Task:\n" + task
 
 
 def run_agy_cli(
-    *, prompt: str, model: str, target_dir: Path, agy_binary: str, auto_approve: bool, timeout_s: int
+    *,
+    prompt: str,
+    model: str,
+    target_dir: Path,
+    agy_binary: str,
+    skip_permissions: bool = False,
+    timeout_s: int = DEFAULT_TIMEOUT_SECONDS,
+    conversation: str | None = None,
+    continue_latest: bool = False,
 ) -> tuple[dict[str, Any], int]:
     """Execute agy and return parsed output plus its process exit code."""
     command = [
@@ -217,7 +246,11 @@ def run_agy_cli(
         "--model",
         model,
     ]
-    if auto_approve:
+    if conversation:
+        command += ["--conversation", conversation]
+    elif continue_latest:
+        command.append("--continue")
+    if skip_permissions:
         command.append("--dangerously-skip-permissions")
     try:
         process = subprocess.run(  # noqa: S603 -- binary is discovered or explicitly supplied by the caller
@@ -250,15 +283,34 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--target-dir", default=".", help="Workspace directory (default: current directory)")
     parser.add_argument("--allow-dir", help="Writable directory inside --target-dir; required with --auto-approve")
     parser.add_argument("--auto-approve", action="store_true", help="Allow writes inside --allow-dir")
+    parser.add_argument(
+        "--allow-tools",
+        action="store_true",
+        help="Auto-approve read/execute tool use without granting a write scope",
+    )
     parser.add_argument("--no-guardrail", action="store_true", help="Skip the prompt guardrail in read-only mode only")
     parser.add_argument("--agy-bin", help="Path to agy executable")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS, help="Timeout in seconds")
+    parser.add_argument("--conversation", help="Resume a previous agy conversation by ID")
+    parser.add_argument(
+        "--continue-latest",
+        action="store_true",
+        help="Resume agy's most recent conversation instead of starting fresh",
+    )
     args = parser.parse_args(argv)
 
     if args.auto_approve and not args.allow_dir:
         parser.error("--auto-approve requires --allow-dir")
+    if args.allow_tools and args.auto_approve:
+        parser.error("--allow-tools and --auto-approve are mutually exclusive")
+    if args.allow_tools and args.allow_dir:
+        parser.error("--allow-dir requires --auto-approve")
+    if args.allow_tools and args.no_guardrail:
+        parser.error("--no-guardrail cannot be combined with --allow-tools")
     if args.auto_approve and args.no_guardrail:
         parser.error("--no-guardrail cannot be combined with --auto-approve")
+    if args.conversation and args.continue_latest:
+        parser.error("--conversation and --continue-latest are mutually exclusive")
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
 
@@ -280,6 +332,7 @@ def main(argv: list[str] | None = None) -> int:
         allow_dir=allowed_relative,
         auto_approve=args.auto_approve,
         guardrail=not args.no_guardrail,
+        allow_tools=args.allow_tools,
     )
     before = snapshot_workspace(target_dir) if args.auto_approve else {}
     session_id = f"antigravity-{os.getpid()}-{time.monotonic_ns()}"
@@ -304,9 +357,13 @@ def main(argv: list[str] | None = None) -> int:
             model=args.model,
             target_dir=target_dir,
             agy_binary=agy_binary,
-            auto_approve=args.auto_approve,
+            skip_permissions=args.auto_approve or args.allow_tools,
             timeout_s=args.timeout,
+            conversation=args.conversation,
+            continue_latest=args.continue_latest,
         )
+        if result.get("conversation_id"):
+            _stderr(f"conversation={result['conversation_id']} (resume with --conversation)")
         if result.get("text"):
             print(result["text"], end="" if result["text"].endswith("\n") else "\n")
         if args.auto_approve:
@@ -315,8 +372,21 @@ def main(argv: list[str] | None = None) -> int:
             if outside:
                 _stderr("scope violation; changed outside --allow-dir: " + ", ".join(outside))
                 return 4
+        if result.get("denied_actions"):
+            names = ", ".join(
+                str(entry.get("action") or entry.get("display_name") or "unknown")
+                for entry in result["denied_actions"]
+            )
+            _stderr(
+                f"worker was denied permission for: {names}. Re-run with --allow-tools for "
+                "read/execute tools, or add a permissions.allow rule in agy settings.json."
+            )
+            return exit_code if exit_code == 124 else 5
         if result.get("error"):
             _stderr(str(result["error"]))
+            return exit_code if exit_code == 124 else 2
+        if not result.get("text"):
+            _stderr("worker produced no output and reported no error")
             return exit_code if exit_code == 124 else 2
         _stderr(f"model={args.model} elapsed={time.monotonic() - started:.1f}s exit={exit_code}")
         return 0

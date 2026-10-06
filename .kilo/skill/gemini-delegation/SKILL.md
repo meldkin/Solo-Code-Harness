@@ -1,6 +1,6 @@
 ---
 name: gemini-delegation
-description: Routes read-heavy work, broad scoped changes, and independent review to Gemini through the Antigravity headless CLI. Use GUI inbox/outbox handoff only when a rendered UI needs human verification.
+description: Routes read-heavy work, broad scoped changes, and independent review to Gemini through the Antigravity headless CLI, selecting gemini-3.8-flash high/medium/low by task complexity. Use GUI inbox/outbox handoff only when a rendered UI needs human verification.
 ---
 
 # Gemini/Antigravity Delegation — Headless Worker
@@ -64,8 +64,52 @@ Gemini earns its relay cost only on breadth.
 # Read-only task
 python tools/antigravity_delegate.py "<task>" --model gemini-3.8-flash-medium
 
+# Read-only task that needs tools (greps, tests, git status), no write scope
+python tools/antigravity_delegate.py "<task>" --allow-tools --model gemini-3.8-flash-medium
+
 # Write task: narrow directory scope and explicit auto approval
 python tools/antigravity_delegate.py "<task>" --allow-dir src --auto-approve --model gemini-3.8-flash-high
+```
+
+### Tool permissions and silent failures
+
+A plain read-only run cannot answer the `command` permission prompt headless, so
+`run_command` is auto-denied and agy still returns `status: SUCCESS`. The wrapper
+therefore inspects `denied_actions` and per-tool `ERROR` events: a denied run
+exits **5** and an empty-output run exits **2**, never a silent success. Use
+`--allow-tools` for read/execute work without granting a write scope (no
+directory lock, no scope audit); it is mutually exclusive with `--auto-approve`,
+`--allow-dir`, and `--no-guardrail`. For a least-privilege alternative, add a
+`permissions.allow` rule in agy's own `settings.json` (e.g.
+`command(python tools/garden.py)`).
+
+### Choose the model by task complexity
+
+Gemini 3.8 Flash exposes three reasoning levels as distinct model ids. All three
+draw the same account quota, so spend the cheapest level that fits:
+
+| Complexity | Model id | Use for |
+|---|---|---|
+| Low | `gemini-3.8-flash-low` | Mechanical, single-file, little reasoning |
+| Medium (default) | `gemini-3.8-flash-medium` | Multi-file summarize/compare, scoped refactor |
+| High | `gemini-3.8-flash-high` | Independent design review, subtle bug hunt |
+
+### Quota exhaustion and manual account rotation
+
+`agy.exe` authenticates with the machine-level Antigravity Google account, and
+there is **no per-run account flag** — one account at a time. When the account
+exhausts Gemini quota, delegated runs fail until the user signs into another
+account in the Antigravity IDE and re-auths; the CLI inherits the new session on
+the next run. Since rotation is manual and serial, do not start an unattended
+batch you expect to cross a quota boundary.
+
+The wrapper prints the `conversation=<id>` line on every run. Resume an
+interrupted task after re-auth with:
+
+```powershell
+python tools/antigravity_delegate.py "<follow-up>" --conversation <id>
+# or, to resume the most recent conversation
+python tools/antigravity_delegate.py "<follow-up>" --continue-latest
 ```
 
 Use `.gemini/antigravity/handoff/` only as a GUI fallback for UI verification.

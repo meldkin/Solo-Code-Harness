@@ -234,7 +234,7 @@ def test_run_agy_cli_maps_timeout_to_124(monkeypatch, tmp_path):
 
     monkeypatch.setattr(antigravity_delegate.subprocess, "run", raise_timeout)
     result, code = antigravity_delegate.run_agy_cli(
-        prompt="p", model="m", target_dir=tmp_path, agy_binary="agy", auto_approve=False, timeout_s=1
+        prompt="p", model="m", target_dir=tmp_path, agy_binary="agy", skip_permissions=False, timeout_s=1
     )
 
     assert code == 124
@@ -247,7 +247,7 @@ def test_run_agy_cli_maps_oserror_to_one(monkeypatch, tmp_path):
 
     monkeypatch.setattr(antigravity_delegate.subprocess, "run", raise_oserror)
     _, code = antigravity_delegate.run_agy_cli(
-        prompt="p", model="m", target_dir=tmp_path, agy_binary="agy", auto_approve=False, timeout_s=1
+        prompt="p", model="m", target_dir=tmp_path, agy_binary="agy", skip_permissions=False, timeout_s=1
     )
 
     assert code == 1
@@ -261,10 +261,77 @@ def test_run_agy_cli_keeps_nonzero_exit_code(monkeypatch, tmp_path):
 
     monkeypatch.setattr(antigravity_delegate.subprocess, "run", lambda *a, **k: Completed())
     _, code = antigravity_delegate.run_agy_cli(
-        prompt="p", model="m", target_dir=tmp_path, agy_binary="agy", auto_approve=True, timeout_s=5
+        prompt="p", model="m", target_dir=tmp_path, agy_binary="agy", skip_permissions=True, timeout_s=5
     )
 
     assert code == 3
+
+
+def test_run_agy_cli_passes_conversation_id(monkeypatch, tmp_path):
+    seen: dict[str, list[str]] = {}
+
+    class Completed:
+        returncode = 0
+        stdout = '{"event":"result","result":{"status":"SUCCESS","response":"ok"}}'
+        stderr = ""
+
+    def capture(command, *args, **kwargs):
+        seen["command"] = command
+        return Completed()
+
+    monkeypatch.setattr(antigravity_delegate.subprocess, "run", capture)
+    antigravity_delegate.run_agy_cli(
+        prompt="p",
+        model="m",
+        target_dir=tmp_path,
+        agy_binary="agy",
+        skip_permissions=False,
+        timeout_s=5,
+        conversation="conv_42",
+    )
+
+    assert seen["command"][-2:] == ["--conversation", "conv_42"]
+
+
+def test_run_agy_cli_continue_latest_takes_no_id(monkeypatch, tmp_path):
+    seen: dict[str, list[str]] = {}
+
+    class Completed:
+        returncode = 0
+        stdout = '{"event":"result","result":{"status":"SUCCESS","response":"ok"}}'
+        stderr = ""
+
+    def capture(command, *args, **kwargs):
+        seen["command"] = command
+        return Completed()
+
+    monkeypatch.setattr(antigravity_delegate.subprocess, "run", capture)
+    antigravity_delegate.run_agy_cli(
+        prompt="p",
+        model="m",
+        target_dir=tmp_path,
+        agy_binary="agy",
+        skip_permissions=False,
+        timeout_s=5,
+        continue_latest=True,
+    )
+
+    assert seen["command"][-1] == "--continue"
+
+
+def test_main_rejects_conversation_with_continue_latest(tmp_path):
+    (tmp_path / "src").mkdir()
+    with pytest.raises(SystemExit):
+        antigravity_delegate.main(
+            [
+                "task",
+                "--target-dir",
+                str(tmp_path),
+                "--conversation",
+                "conv_1",
+                "--continue-latest",
+            ]
+        )
 
 
 def test_find_agy_binary_prefers_path(monkeypatch):
@@ -289,3 +356,85 @@ def test_find_agy_binary_returns_none_when_absent(monkeypatch, tmp_path):
     monkeypatch.setattr(antigravity_delegate.Path, "home", classmethod(lambda cls: tmp_path))
 
     assert antigravity_delegate.find_agy_binary() is None
+
+
+def test_parse_ndjson_events_collects_denied_actions_and_tool_errors():
+    """A denied tool is a failure signal even when result.status is SUCCESS (P1)."""
+    stream = "\n".join(
+        [
+            '{"event":"step_update","step_update":{"step_type":"tool","state":"ERROR","tool_name":"run_command",'
+            '"tool_info":{"error":{"type":"TOOL_ERROR","message":"permission check failed\\nsecond line"}}}}',
+            '{"event":"result","result":{"status":"SUCCESS","response":"",'
+            '"denied_actions":[{"action":"command","display_name":"RunCommand"}]}}',
+        ]
+    )
+
+    result = antigravity_delegate.parse_ndjson_events(stream)
+
+    assert result["denied_actions"] == [{"action": "command", "display_name": "RunCommand"}]
+    assert result["tool_errors"] == [{"tool": "run_command", "message": "permission check failed"}]
+    assert result["error"] is None
+
+
+def test_build_prompt_allow_tools_keeps_read_only_but_permits_commands():
+    prompt = antigravity_delegate.build_prompt(
+        "audit", allow_dir=None, auto_approve=False, guardrail=True, allow_tools=True
+    )
+
+    assert "READ-ONLY MODE" in prompt
+    assert "You MAY run" in prompt
+    assert "Allowed write directory" not in prompt
+
+
+def test_run_agy_cli_adds_skip_flag_when_requested(monkeypatch, tmp_path):
+    seen: dict[str, list[str]] = {}
+
+    class Completed:
+        returncode = 0
+        stdout = '{"event":"result","result":{"status":"SUCCESS","response":"ok"}}'
+        stderr = ""
+
+    def capture(command, *args, **kwargs):
+        seen["command"] = command
+        return Completed()
+
+    monkeypatch.setattr(antigravity_delegate.subprocess, "run", capture)
+    antigravity_delegate.run_agy_cli(
+        prompt="p", model="m", target_dir=tmp_path, agy_binary="agy", skip_permissions=True, timeout_s=5
+    )
+
+    assert "--dangerously-skip-permissions" in seen["command"]
+
+
+def test_main_reports_denied_actions_as_failure(monkeypatch, tmp_path):
+    ws, _ = _wire_main(monkeypatch, tmp_path)
+    result = ({"text": "", "error": None, "denied_actions": [{"action": "command"}]}, 0)
+
+    assert _run_main(monkeypatch, ws, result) == 5
+
+
+def test_main_reports_empty_output_as_failure(monkeypatch, tmp_path):
+    ws, _ = _wire_main(monkeypatch, tmp_path)
+
+    assert _run_main(monkeypatch, ws, ({"text": "", "error": None}, 0)) == 2
+
+
+def test_main_allows_tools_without_allow_dir(monkeypatch, tmp_path):
+    ws, _ = _wire_main(monkeypatch, tmp_path)
+    monkeypatch.setattr(antigravity_delegate, "run_agy_cli", lambda **kwargs: ({"text": "ok", "error": None}, 0))
+
+    assert antigravity_delegate.main(["task", "--target-dir", str(ws), "--allow-tools"]) == 0
+
+
+def test_main_rejects_allow_tools_with_auto_approve(tmp_path):
+    (tmp_path / "src").mkdir()
+    with pytest.raises(SystemExit):
+        antigravity_delegate.main(
+            ["task", "--target-dir", str(tmp_path), "--allow-tools", "--allow-dir", "src", "--auto-approve"]
+        )
+
+
+def test_main_rejects_allow_dir_without_auto_approve(tmp_path):
+    (tmp_path / "src").mkdir()
+    with pytest.raises(SystemExit):
+        antigravity_delegate.main(["task", "--target-dir", str(tmp_path), "--allow-tools", "--allow-dir", "src"])

@@ -155,24 +155,41 @@ delegation, not an instruction to always delegate.
 
 | Work shape | Route to | Why |
 |---|---|---|
-| Read >5 files, then summarize/compare/audit | **Antigravity GUI handoff** | Large context through Gemini in Antigravity IDE |
-| Repo-wide survey -- "where else does X appear?" | **OpenCode CLI** | Headless survey with large context models |
-| Independent review of a design or diff | **Antigravity GUI handoff** | A second model catches different things |
-| UI verification, screenshots, recordings | **Antigravity GUI handoff** | Visual inspection in the rendered IDE UI |
+| Read >5 files, then summarize/compare/audit | **Antigravity CLI** | Large context through a headless worker |
+| Repo-wide survey -- "where else does X appear?" | **Antigravity CLI** | Breadth is its edge |
+| Independent review of a design or diff | **Antigravity CLI** | A second model catches different things |
+| UI verification, screenshots, recordings | **Antigravity GUI handoff** | The CLI cannot verify a rendered UI |
 | Small mechanical edit, boilerplate, one test | **Kilo CLI** or **OpenCode CLI** | Both headless -- cost the user nothing |
-| Scoped code writing behind an explicit fence | **OpenCode CLI** | Requires explicit fence in writing |
+| Scoped code writing behind an explicit fence | Antigravity CLI if broad, Kilo/OpenCode if narrow | All three need the fence in writing |
 | Free model experimentation, cache tracking | **OpenCode CLI** | Has free models + reasoning/cache token breakdown |
 | Architecture / product / security decisions | **Neither -- do it here** | Judgment is not delegable |
 | Anything needing this conversation's history | **Neither -- do it here** | All workers are context-blind |
 
-Kilo CLI and OpenCode CLI are headless executors. Antigravity GUI handoff provides
-a manual relay protocol for UI verification, wide audits, or visual work via
-`.gemini/antigravity/handoff/`.
+Kilo CLI, OpenCode CLI, and Antigravity CLI are headless. Use
+`tools/antigravity_delegate.py` for broad scopes; writes require both
+`--allow-dir` and `--auto-approve`. The wrapper owns the directory lock and
+post-run scope check. Keep GUI handoff for rendered UI verification.
 
-**Verification is mandatory.** Every controlled test of every
+**Verification is mandatory for all three.** Every controlled test of every
 engine produced an error invisible in its own self-summary. Their evidence
 is reliable; their self-assessment is not. Re-run their commands, run the
 real gates, and mutation-test any new check they write.
+
+## Delegating to Antigravity CLI
+
+```bash
+# Read-only
+python tools/antigravity_delegate.py "<task>"
+
+# Scoped write
+python tools/antigravity_delegate.py "<task>" --allow-dir src --auto-approve
+```
+
+Inspect `git diff` and rerun the real gates after every worker run. The post-run
+scope check audits `--target-dir` only: it cannot see writes outside that
+directory and cannot undo a write. `--auto-approve` still passes
+`--dangerously-skip-permissions` to `agy.exe`, so `--allow-dir` is the fence, not
+a sandbox.
 
 ## Antigravity GUI handoff fallback
 
@@ -194,9 +211,12 @@ Writing the brief -- four rules, each from an observed failure:
 4. **Give the measurement, never the answer** (`ls .kilo/skill | wc -l`,
    not "there are 51").
 
-`agy.exe` headless execution has been retired to avoid automated traffic flags
-on Google accounts. For Antigravity tasks, use the GUI handoff protocol above.
-Full guide: `.claude/skills/gemini-delegation/SKILL.md`.
+For headless writes, do not bypass the wrapper's directory lock or guardrail.
+
+The `google-antigravity` SDK and `antigravity-ide chat` remain unsuitable for
+this workflow. Use `agy.exe --print --output-format stream-json` through the
+wrapper. Full guide:
+`.claude/skills/gemini-delegation/SKILL.md`.
 
 
 ## Language

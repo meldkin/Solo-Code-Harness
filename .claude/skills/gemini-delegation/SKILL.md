@@ -1,54 +1,118 @@
 ---
 name: gemini-delegation
-description: Routes UI verification, visual inspection, broad read-heavy audits, or independent review to Gemini in Antigravity IDE via manual file handoff (inbox/outbox). Headless agy.exe delegation is retired.
+description: Routes read-heavy work, broad scoped changes, and independent review to Gemini through the Antigravity headless CLI, selecting gemini-3.8-flash high/medium/low by task complexity. Use GUI inbox/outbox handoff only when a rendered UI needs human verification.
 ---
 
-# Gemini/Antigravity Delegation — GUI Handoff Protocol
+# Gemini/Antigravity Delegation — Headless Worker
 
 ## Overview
 
-Antigravity delegation operates via the manual file-based handoff protocol in
-`.gemini/antigravity/handoff/`. Headless `agy.exe` delegation has been retired to
-eliminate automated bot traffic flags on user Google accounts.
+The orchestrator invokes `agy.exe` through `tools/antigravity_delegate.py`.
+Read-only tasks are the default. A write requires both `--auto-approve` and an
+explicit `--allow-dir`; the wrapper takes a directory lock, prepends a guardrail,
+and rejects a post-run scope violation. That check is an **audit of `--target-dir`
+only** — it cannot see writes outside it and cannot undo a write, and
+`--auto-approve` still passes `--dangerously-skip-permissions` to `agy.exe`.
+`--allow-dir` is the fence; this is not a sandbox. Review the diff and rerun all
+evidence: the worker report is not verification.
 
-Use Antigravity GUI handoff when human-in-the-loop inspection, UI verification,
-or a second-model review with large context is beneficial.
+The payoff is real and measured. On a repo-wide audit (2026-07-26) Gemini read
+25 files / 194 KB (~49,600 tokens) while this orchestrator spent ~2,500 tokens
+writing the brief and verifying the result — roughly **95% saving, ~20x
+leverage**. That ratio is the entire reason the mechanism exists.
 
-The payoff on large tasks is real: Gemini's context window can absorb wide audits
-while this orchestrator writes the brief and verifies the result.
+## Why not the SDK or IDE chat command
+
+Two dead ends, both verified — do not re-investigate without new information:
+
+- **`google-antigravity` Python SDK**: headless, but authenticates only via
+  `GEMINI_API_KEY` or Vertex + ADC (confirmed by reading its `models.py`).
+  There is no OAuth path, so it **cannot reuse the IDE's Gemini Pro login**.
+  Using it would bill a separate API account rather than the existing plan.
+- **`antigravity-ide chat -m ask|edit|agent`**: exists, but only sends the
+  prompt into the GUI. Exit 0, empty stdout, no readable result.
+
+Use `agy.exe --print --output-format stream-json` instead. It returns structured
+events and works without the GUI.
 
 ## When to Delegate
 
-Strong fit:
+Strong fit — this is where the leverage is:
 
 | Task shape | Why Gemini |
 |---|---|
-| Read >5 files, then summarize/compare | Large context in Antigravity IDE |
+| Read >5 files, then summarize/compare | Its context is cheap; ours is not |
 | Repo-wide audit ("where else does X appear?") | Breadth beats depth here |
 | Independent review of a design or diff | A second model catches different things |
-| UI verification / screenshots / recordings | Visual inspection in the rendered IDE UI |
+| UI verification / screenshots / recordings | The orchestrator cannot do this at all |
+| Scoped code writing behind an explicit fence | Proven workable — see the fencing rule below |
 
 Poor fit:
 
 - Anything needing this conversation's history — the handoff file is the
   **only** context Gemini receives.
 - Architecture and product decisions. Those stay with the orchestrator.
-- Small mechanical edits — use Kilo CLI or OpenCode CLI instead; they are
-  headless and do not cost the user a relay step.
+- Small mechanical edits — use Kilo CLI instead; it is headless and does not
+  cost the user a relay step.
 
-Rule of thumb: if the task is a small mechanical edit, **use OpenCode CLI or Kilo CLI**.
-Gemini earns its relay cost on breadth and visual inspection.
+Rule of thumb: if the task is small enough that Kilo CLI can do it, **use Kilo CLI**.
+Gemini earns its relay cost only on breadth.
 
-## GUI Handoff Protocol
+## Invocation
 
-To minimize copy-paste, use the file-based handoff protocol:
+```powershell
+# Read-only task
+python tools/antigravity_delegate.py "<task>" --model gemini-3.8-flash-medium
 
-1. Write the plan to `.gemini/antigravity/handoff/inbox/<slug>-plan.md`
-   (see `.gemini/antigravity/handoff/README.md` for the exact format).
-2. Tell the user the one line to relay:
-   *"Open Antigravity, tell Gemini to read `.gemini/antigravity/handoff/inbox/<slug>-plan.md` and write its report to `.gemini/antigravity/handoff/outbox/<slug>-report.md`."*
-3. `.claude/hooks/session_start.py` auto-detects new `outbox/*-report.md`
-   files at the next session start and announces them.
+# Read-only task that needs tools (greps, tests, git status), no write scope
+python tools/antigravity_delegate.py "<task>" --allow-tools --model gemini-3.8-flash-medium
+
+# Write task: narrow directory scope and explicit auto approval
+python tools/antigravity_delegate.py "<task>" --allow-dir src --auto-approve --model gemini-3.8-flash-high
+```
+
+### Tool permissions and silent failures
+
+A plain read-only run cannot answer the `command` permission prompt headless, so
+`run_command` is auto-denied and agy still returns `status: SUCCESS`. The wrapper
+therefore inspects `denied_actions` and per-tool `ERROR` events: a denied run
+exits **5** and an empty-output run exits **2**, never a silent success. Use
+`--allow-tools` for read/execute work without granting a write scope (no
+directory lock, no scope audit); it is mutually exclusive with `--auto-approve`,
+`--allow-dir`, and `--no-guardrail`. For a least-privilege alternative, add a
+`permissions.allow` rule in agy's own `settings.json` (e.g.
+`command(python tools/garden.py)`).
+
+### Choose the model by task complexity
+
+Gemini 3.8 Flash exposes three reasoning levels as distinct model ids. All three
+draw the same account quota, so spend the cheapest level that fits:
+
+| Complexity | Model id | Use for |
+|---|---|---|
+| Low | `gemini-3.8-flash-low` | Mechanical, single-file, little reasoning |
+| Medium (default) | `gemini-3.8-flash-medium` | Multi-file summarize/compare, scoped refactor |
+| High | `gemini-3.8-flash-high` | Independent design review, subtle bug hunt |
+
+### Quota exhaustion and manual account rotation
+
+`agy.exe` authenticates with the machine-level Antigravity Google account, and
+there is **no per-run account flag** — one account at a time. When the account
+exhausts Gemini quota, delegated runs fail until the user signs into another
+account in the Antigravity IDE and re-auths; the CLI inherits the new session on
+the next run. Since rotation is manual and serial, do not start an unattended
+batch you expect to cross a quota boundary.
+
+The wrapper prints the `conversation=<id>` line on every run. Resume an
+interrupted task after re-auth with:
+
+```powershell
+python tools/antigravity_delegate.py "<follow-up>" --conversation <id>
+# or, to resume the most recent conversation
+python tools/antigravity_delegate.py "<follow-up>" --continue-latest
+```
+
+Use `.gemini/antigravity/handoff/` only as a GUI fallback for UI verification.
 
 ## Writing the Brief — Four Rules Learned From Failures
 
@@ -72,7 +136,7 @@ column carried zero information. Require the command and its output instead:
 
 ```markdown
 | Claim | Command run | Output (trimmed) |
-Do not write a claim you did not run a command for.
+Do not write a claim you did not actually run a command for.
 ```
 
 **3. Say explicitly which files may be touched — including the brief.** The
@@ -98,8 +162,8 @@ self-assessment is not.** Never let a self-report substitute for a check.
 
 1. Re-run every command in its evidence table yourself. Spot-checking is not
    enough — the wrong row looked exactly like the right ones.
-2. Run the project's real gates (`python .github/scripts/checklist.py .`,
-   `python tools/garden.py`, targeted pytest, `security_scan.py`).
+2. Run the project's real gates (`make check`, `python tools/garden.py`,
+   targeted pytest, `security_scan.py`).
 3. For new checks, **mutation-test them**: break the thing the check guards
    and confirm the check goes red. A check that cannot fail is not a check.
 4. For new code, re-derive the ground truth independently before accepting
@@ -110,7 +174,8 @@ self-assessment is not.** Never let a self-report substitute for a check.
 Gemini edits the same working tree at the same time as this session. Before
 delegating anything that **writes**:
 
-- Take a `tools/shared_state.py` file lock; do not bypass it.
+- The wrapper takes a `tools/shared_state.py` directory lock; do not bypass it.
+- Name the writable directory with `--allow-dir` and forbid everything else.
 - Never delegate a write that overlaps a file being edited in this session.
 
 Gemini also keeps its own artifacts outside the repo at
@@ -123,9 +188,10 @@ channel. The report file in `outbox/` is.
 
 | Don't | Do Instead |
 |-------|------------|
-| Delegate a small mechanical edit to Gemini | Use Kilo CLI or OpenCode CLI — headless, no relay cost |
+| Delegate a small mechanical edit to Gemini | Use Kilo CLI — headless, no relay cost to the user |
 | Trust its "Confident: Yes" / "unsure about: nothing" | Re-run its evidence commands yourself |
 | Write a brief without an explicit writable-file list | Fence the scope; name every path it may touch |
 | Put the expected answer in the brief | Give the measurement command, not the number |
 | Let a correct-but-red gate look like failure | Predict the red gate in the brief and call it correct |
-| Use headless agy.exe CLI commands | Retired — use GUI handoff via inbox/outbox |
+| Delegate a write without `--allow-dir --auto-approve` | Use the wrapper's required scope and explicit opt-in |
+| Try the SDK or `antigravity-ide chat` for a headless run | Use `agy.exe` through the wrapper |

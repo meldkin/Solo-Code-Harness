@@ -207,6 +207,14 @@ def _gemini_available(cwd: Path) -> bool:
     return ide.is_dir()
 
 
+def _antigravity_headless_available() -> bool:
+    """Best-effort: is the verified agy headless binary available?"""
+    if shutil.which("agy") is not None:
+        return True
+    candidate = Path.home() / "AppData" / "Local" / "agy" / "bin" / "agy.exe"
+    return candidate.is_file()
+
+
 def _record_session_start(cwd: Path, session_id: str, branch: str, sha: str) -> bool:
     """Record session start via tools/session_persistence.py."""
     tools_dir = cwd / "tools"
@@ -257,6 +265,7 @@ def main() -> int:
         checkpoint = _pending_checkpoint(cwd)
         kilo_ready = _kilo_available()
         gemini_ready = _gemini_available(cwd)
+        antigravity_headless_ready = _antigravity_headless_available()
     except Exception:  # noqa: BLE001 — never crash session startup
         return 0
 
@@ -289,6 +298,12 @@ def main() -> int:
             "Kilo CLI (DeepSeek worker) available — consider delegating small, "
             "well-specified subtasks to it for cost/latency (see AGENTS.md "
             "'Delegating a task to Kilo CLI')."
+        )
+    if antigravity_headless_ready:
+        lines.append(
+            "Antigravity CLI available — use tools/antigravity_delegate.py for "
+            "read-heavy work; writes require --allow-dir and --auto-approve "
+            "(see AGENTS.md 'Delegating to Antigravity CLI')."
         )
     if gemini_ready:
         lines.append(
