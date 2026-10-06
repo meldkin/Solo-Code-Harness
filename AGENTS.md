@@ -336,6 +336,12 @@ that directory and cannot undo a write. `--auto-approve` still passes
 `--dangerously-skip-permissions` to `agy.exe`, so `--allow-dir` is the fence, not
 a sandbox.
 
+**Maximize Antigravity CLI use.** Route all read-heavy, broad, or independent
+tasks to it — reading >5 files, repo-wide surveys, independent review, and
+read-only gate runs (`--allow-tools`). This cannot be hard-enforced: no hook
+blocks a direct multi-file read, so it stays a routing policy plus the
+session-start reminder, not a gate.
+
 ### Delegating to Antigravity GUI (manual fallback)
 
 Use this path when GUI or visual verification is required. A human

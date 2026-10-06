@@ -58,6 +58,44 @@ Poor fit:
 Rule of thumb: if the task is small enough that Kilo CLI can do it, **use Kilo CLI**.
 Gemini earns its relay cost only on breadth.
 
+## Maximizing Antigravity CLI use
+
+Prefer Antigravity CLI (`tools/antigravity_delegate.py`) for every read-heavy,
+broad, or independent task. Concretely, always route these to it:
+
+- reading **>5 files** to summarize, compare, or audit
+- repo-wide surveys: "where else does X appear?", "list every caller of Y"
+- independent review of a design, diff, or PR
+- running the project's read-only gates (`garden`, `ruff`, `check_skips`) and
+  reporting the raw output — use `--allow-tools` so the commands can run
+- scoped code writing behind an explicit `--allow-dir --auto-approve` fence
+
+Keep in the orchestrator: anything needing this conversation's history, and
+architecture / product / security decisions.
+
+### Can this be forced?
+
+**No hard enforcement exists.** The orchestrator chooses which tool to call, and
+no hook intercepts "the agent read 6 files directly" to block it. The available
+levers are all soft:
+
+| Lever | Kind | Where |
+|---|---|---|
+| Routing rules ("use Antigravity CLI for X") | advisory | `AGENTS.md`, this skill |
+| Session-start availability announcement | reminder | `.claude/hooks/session_start.py` |
+| `opencode.json` permission `ask` on the wrapper | prompt, not a block | `opencode.json` |
+| Wrapper `--allow-dir` / lock / scope audit | enforced *if a run happens* | `tools/antigravity_delegate.py` |
+
+To make delegation near-certain without a hard gate:
+1. Keep the routing rules imperative (they already are).
+2. Name the trigger in the task itself — e.g. *"delegate this audit to agy"*.
+3. Pass `--allow-tools` so a read-only audit can actually run greps and tests.
+
+A blocking hook ("deny Read on the Nth file unless delegated") was **not** added:
+it would fight the Escalation and Surgical-Changes rules and break legitimate
+large in-orchestrator work. Treat maximization as a policy plus a prompt, not a
+gate.
+
 ## Invocation
 
 ```powershell
