@@ -64,7 +64,7 @@ def count_findings(root: Path = ROOT) -> tuple[int, str]:
     source-context lines, which counted 381 for the same 38 findings.
     """
     proc = subprocess.run(  # noqa: S603,S607 — fixed argv, no shell
-        ["ruff", "check", "--config", str(ROOT / ".ruff.toml"), "--select",
+        ["ruff", "check", "--config", str(ROOT / ".ruff.toml"), "--select",  # noqa: S607 -- partial path
          EXTRA_SELECT, "--ignore", EXTRA_IGNORE, "--output-format", "concise",
          "--quiet", "--no-cache", str(root)],
         capture_output=True, text=True, timeout=300, check=False,

@@ -163,12 +163,16 @@ def setup_task(task: dict[str, Any]) -> None:
         for file_path, content in setup_val.items():
             Path(file_path).write_text(content, encoding="utf-8")
     elif isinstance(setup_val, str):
-        subprocess.run(
-            shlex.split(setup_val),
-            capture_output=True,
-            check=False,
-            shell=False,
-        )
+        try:
+            subprocess.run(
+                shlex.split(setup_val),
+                capture_output=True,
+                check=False,
+                shell=False,
+                timeout=600,
+            )
+        except subprocess.TimeoutExpired:
+            print(f"[benchmark] setup timed out after 600s: {setup_val!r}")
 
 
 def run_task_with_model(

@@ -13,5 +13,6 @@ ignore = ["E501"]
 
 [lint.per-file-ignores]
 "scripts/*" = ["T201"]  # Allow print() in scripts
+"tools/test_*.py" = ["S603", "S607", "BLE001"]  # Tests invoke sys.executable/node/git with fixed argv, shell=False; bandit S-checks are noise here
 "tools/generate_harness.py" = ["SIM114"]  # Branch combine would reduce readability
 "tools/setup-global-config.py" = ["I001"]  # Cross-tool import requires sys.path.insert before import

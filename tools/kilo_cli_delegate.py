@@ -89,7 +89,7 @@ def _make_streams_encoding_safe() -> None:
         if reconfigure is None:
             continue
         with contextlib.suppress(ValueError, OSError):
-            reconfigure(errors="replace")
+            reconfigure(encoding="utf-8", errors="replace")
 
 
 # A Windows npm install puts `kilo.cmd` on PATH. Running it via subprocess

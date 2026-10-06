@@ -124,7 +124,7 @@ def untracked_top_level_dirs(root: Path) -> set[str]:
     """
     try:
         proc = subprocess.run(  # noqa: S603,S607 — fixed argv, no shell
-            ["git", "-C", str(root), "ls-files"],
+            ["git", "-C", str(root), "ls-files"],  # noqa: S607 -- partial path, fixed argv
             capture_output=True, text=True, timeout=60, check=False,
         )
     except (OSError, subprocess.SubprocessError):

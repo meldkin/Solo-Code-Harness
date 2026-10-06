@@ -98,29 +98,3 @@ High-signal context loaded at session start. Detailed history belongs in
   upstream id (`commandcode/deepseek/deepseek-v4-pro`) while OpenCode refs use the
   harness key (`commandcode/deepseek-v4-pro`) — both correct for their dialect.
   `context_length` comes from the `/models` response, not the file. (2026-09-28)
-- [decision] The OpenCode `freemodel` provider was broken on three independent
-  layers, each measured 2026-10-03 by experiment:
-  1. `settings.baseURL` was `${OPENAI_BASE_URL}`, but `opencode-env.ps1` strips
-     `/v1` from that var, so the provider POSTed to `.../chat/completions` and
-     got `Error: not found`. The generator now emits `${OPENAI_BASE_URL}/v1`.
-  2. Auth used `env: ["OPENAI_API_KEY"]`, which the built-in OpenAI provider also
-     claims, and a FreeModel credential in OpenCode's own store overrides the
-     provider env var: a stale stored key shadowed `.env` and returned
-     `Unauthorized - Invalid token` while the same `.env` key worked via curl.
-     The provider now reads a dedicated `FREEMODEL_API_KEY`, and the launcher
-     clears the stored credential each launch
-     (`opencode auth logout freemodel "API key"`, idempotent — with nothing
-     stored it just reports the `FREEMODEL_API_KEY` fallback and exits non-zero).
-  3. `opencode-env.ps1` set `$ErrorActionPreference = "Stop"`, which turns a
-     native command's stderr into a terminating error in Windows PowerShell 5.1:
-     every `opencode-env.ps1 run ...` exited 1 with an empty `Write-Error`, for
-     every provider. Lowered to `Continue` around the native call and success is
-     read from `$LASTEXITCODE`.
-  Debug technique worth reusing: `opencode run --standalone` bypasses the
-  background server, and a local echo HTTP server reveals the exact request
-  line, headers and `Authorization` header OpenCode sends.
-  Model catalog: FreeModel's `/v1/models` is stale (lists dead `gpt-6-luna`,
-  which answers 404, and omits `gpt-6.1-sol`). Declared models are `gpt-6-sol`,
-  `gpt-6-astra`, `gpt-6.1-sol`; every other name routes to `gpt-6-sol`
-  server-side, so extra aliases add no capability.
-

@@ -815,7 +815,11 @@ def _run_command(cmd: list[str], cwd: Path, label: str, dry_run: bool) -> bool:
         return True
 
     print(f"  [{label}] Running: {' '.join(cmd)}")
-    result = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True)
+    try:
+        result = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True, timeout=1800)
+    except subprocess.TimeoutExpired:
+        print(f"  [{label}] FAILED (timeout after 1800s)")
+        return False
     if result.returncode != 0:
         print(f"  [{label}] FAILED (exit {result.returncode})")
         if result.stderr.strip():
@@ -1024,11 +1028,14 @@ def scaffold(
     # ── Step 6: Create initial commit message ────────────────────
     if not dry_run and git_dir.exists():
         # Check if there's anything to commit
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=str(target_path),
-            capture_output=True, text=True,
-        )
+        try:
+            result = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=str(target_path),
+                capture_output=True, text=True, timeout=60,
+            )
+        except subprocess.TimeoutExpired:
+            result = subprocess.CompletedProcess([], returncode=1, stdout="", stderr="")
         if result.stdout.strip():
             _run_command(
                 ["git", "add", "."],

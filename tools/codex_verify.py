@@ -19,7 +19,11 @@ COMMANDS = [
 def main() -> int:
     for command in COMMANDS:
         print(f"\n$ {' '.join(command)}", flush=True)
-        result = subprocess.run(command, cwd=ROOT, check=False)
+        try:
+            result = subprocess.run(command, cwd=ROOT, check=False, timeout=900)
+        except subprocess.TimeoutExpired:
+            print("FAILED (timeout after 900s)")
+            return 1
         if result.returncode:
             print(f"FAILED (exit {result.returncode})")
             return result.returncode

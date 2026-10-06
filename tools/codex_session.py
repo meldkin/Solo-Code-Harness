@@ -35,10 +35,13 @@ def start(session_id: str) -> int:
 
 
 def end(session_id: str, summary: str) -> int:
-    changed = subprocess.run(
-        ["git", "diff", "--name-only"], cwd=ROOT, text=True,
-        capture_output=True, check=False,
-    ).stdout.splitlines()
+    try:
+        changed = subprocess.run(
+            ["git", "diff", "--name-only"], cwd=ROOT, text=True,
+            capture_output=True, check=False, timeout=30,
+        ).stdout.splitlines()
+    except subprocess.TimeoutExpired:
+        changed = []
     with SharedState() as state:
         state.add_session_entry(
             engine="codex", model=_model(), session_id=session_id,

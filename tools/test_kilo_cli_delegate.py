@@ -95,3 +95,29 @@ def test_parse_json_events_extracts_text_and_session():
     assert result["text"] == "PONG"
     assert result["session_id"] == "ses_kilo"
     assert result["tokens"] == {"total": 5}
+
+
+def test_make_streams_encoding_safe_relaxes_errors(monkeypatch):
+    calls = {}
+
+    class FakeStream:
+        def reconfigure(self, **kwargs):
+            calls.update(kwargs)
+
+    monkeypatch.setattr(kilo_cli_delegate.sys, "stdout", FakeStream())
+    monkeypatch.setattr(kilo_cli_delegate.sys, "stderr", FakeStream())
+
+    kilo_cli_delegate._make_streams_encoding_safe()
+
+    assert calls.get("encoding") == "utf-8"
+    assert calls.get("errors") == "replace"
+
+
+def test_make_streams_encoding_safe_tolerates_missing_reconfigure(monkeypatch):
+    class Bare:
+        pass
+
+    monkeypatch.setattr(kilo_cli_delegate.sys, "stdout", Bare())
+    monkeypatch.setattr(kilo_cli_delegate.sys, "stderr", Bare())
+
+    kilo_cli_delegate._make_streams_encoding_safe()

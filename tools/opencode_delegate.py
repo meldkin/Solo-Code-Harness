@@ -31,6 +31,7 @@ Auth: opencode providers login <url>
 """
 
 import argparse
+import contextlib
 import json
 import shutil
 import subprocess
@@ -75,6 +76,16 @@ Your permission scope was frozen when this task was created and cannot be expand
 def _stderr(msg: str) -> None:
     """Print to stderr with [opencode_delegate] prefix."""
     print(f"[opencode_delegate] {msg}", file=sys.stderr)
+
+
+def _make_streams_encoding_safe() -> None:
+    """Never crash on worker output the console encoding cannot represent."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        with contextlib.suppress(ValueError, OSError):
+            reconfigure(encoding="utf-8", errors="replace")
 
 
 # npm/bun installs put a `.cmd`/`.bat` shim on PATH. Its `%*` expansion mangles
@@ -286,6 +297,7 @@ def log_usage(
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 def main(argv: list[str] | None = None) -> int:
+    _make_streams_encoding_safe()
     parser = argparse.ArgumentParser(
         description="OpenCode CLI delegation wrapper",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -364,11 +376,7 @@ def main(argv: list[str] | None = None) -> int:
         _stderr(f"Error: {result['error']}")
         return 2
 
-    # Print the concatenated text response (handle Unicode on Windows)
-    import sys
-    if sys.platform == "win32":
-        # Force UTF-8 output on Windows
-        sys.stdout.reconfigure(encoding='utf-8')
+    # Print the concatenated text response (encoding handled in main()).
     print(result["text"])
 
     _stderr(f"session={result.get('session_id')}  elapsed={elapsed:.1f}s")

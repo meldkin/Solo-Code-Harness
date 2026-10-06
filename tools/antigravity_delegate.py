@@ -57,7 +57,7 @@ def _make_streams_encoding_safe() -> None:
         if reconfigure is None:
             continue
         with contextlib.suppress(ValueError, OSError):
-            reconfigure(errors="replace")
+            reconfigure(encoding="utf-8", errors="replace")
 
 
 # Best-effort markers for an exhausted account quota. The exact wording is not
