@@ -253,16 +253,24 @@ Copy-Item .env.template .env
 `.env.template` ships with 3 FreeModel VIP tiers (`cc.freemodel.dev`, `api-cc.freemodel.dev`, `cc-t2.freemodel.dev`)
 alongside a `COMMANDCODE_API_KEY` entry shared with Kilo CLI. Your real `.env` is gitignored and never deployed. Full mode is the default for every profile, so hooks and auto-memory stay active; pass `--bare` explicitly if a future provider swap needs the reduced mode.
 
-## Gemini/Antigravity Handoff (manual, file-based)
+## Gemini/Antigravity workers (headless CLI + GUI fallback)
 
-Antigravity IDE has no headless CLI, so Claude Code cannot invoke it
-directly. Instead of copy-pasting plan/result text through
-chat, use the file-based protocol in `.gemini/antigravity/handoff/`:
-Claude writes a plan to `handoff/inbox/<slug>-plan.md`, you relay one line
-to Antigravity ("read this plan, write your report to
-`handoff/outbox/<slug>-report.md`"), and `.claude/hooks/session_start.py`
-auto-detects the new report at Claude's next session start. Full protocol:
-`.gemini/antigravity/handoff/README.md`.
+Antigravity runs headless through `tools/antigravity_delegate.py`, which wraps
+`agy.exe --print --output-format stream-json`. Read-only is the default; a write
+requires both `--auto-approve` and an explicit `--allow-dir`, and the wrapper
+takes a shared-state directory lock and audits the post-run scope. A plain
+read-only run cannot answer the `command` permission prompt, so pass
+`--allow-tools` when an audit must run greps or tests; the wrapper then fails
+loudly (exit 5) if a tool was auto-denied instead of reporting a silent success.
+
+Pick the model by task complexity — `gemini-3.8-flash-low|medium|high`. Inspect
+the binary and its models with `python tools/antigravity_probe.py`.
+
+The GUI inbox/outbox protocol in `.gemini/antigravity/handoff/` stays as a
+fallback when a *rendered* UI needs human verification: Claude writes a plan to
+`handoff/inbox/<slug>-plan.md`, you relay one line to Antigravity, and
+`.claude/hooks/session_start.py` auto-detects the report at the next session
+start. Full protocol: `.gemini/antigravity/handoff/README.md`.
 
 ### Which worker gets which job
 
@@ -272,17 +280,23 @@ engine's availability at session start.
 
 | Work shape | Route to | Why |
 |---|---|---|
-| Read >5 files, then summarize/compare/audit | **Gemini** | ~20x context leverage (measured) |
-| Repo-wide survey — "where else does X appear?" | **Gemini** | Breadth is its edge |
-| Independent review of a design or diff | **Gemini** | A second model catches different things |
-| UI verification, screenshots, recordings | **Gemini** | Claude Code cannot do this at all |
+| Read >5 files, then summarize/compare/audit | **Antigravity CLI** | Large context through a headless worker |
+| Repo-wide survey — "where else does X appear?" | **Antigravity CLI** | Breadth is exactly its edge |
+| Independent review of a design or diff | **Antigravity CLI** | A second model catches different things |
+| UI verification, screenshots, recordings | **Antigravity GUI handoff** | The CLI cannot verify a rendered UI |
 | Small mechanical edit, boilerplate, one test | **OpenCode CLI** | Headless — costs you nothing |
+| Scoped code writing behind an explicit fence | **Antigravity CLI** (broad) / **OpenCode CLI** (narrow) | Both need the fence in writing |
 | Architecture / product / security decisions | **Neither** | Judgment is not delegable |
-| Anything needing the session's history | **Neither** | Both workers are context-blind |
+| Anything needing the session's history | **Neither** | Workers are context-blind |
 
-OpenCode CLI and Kilo CLI are both headless, so Claude delegates directly. OpenCode CLI is the primary executor (reasoning depth + cache tracking); Kilo CLI is fallback. Gemini needs manual relay through the IDE, so Claude asks first.
+OpenCode CLI, Kilo CLI, and Antigravity CLI are all headless, so Claude delegates
+directly. Antigravity CLI handles read-heavy and broad scopes; OpenCode CLI is
+the narrow executor (reasoning depth + cache tracking); Kilo CLI is fallback. The
+GUI handoff remains only for rendered-UI work. This routing cannot be
+hard-enforced — no hook blocks a direct multi-file read — so it is a policy plus
+the session-start reminder, not a gate.
 
-**Everything both workers return is verified.** In controlled tests each
+**Everything every worker returns is verified.** In controlled tests each
 shipped an error that was invisible in its own summary — a wrong finding
 marked "Confident: Yes", and two false positives reported as "unsure
 about: nothing". Their evidence is reliable; their self-assessment is not.
@@ -473,15 +487,23 @@ Copy-Item .env.template .env
 ./claude-env.ps1
 ```
 
-## Handoff Gemini/Antigravity (thủ công, qua file)
+## Worker Gemini/Antigravity (CLI headless + GUI dự phòng)
 
-Antigravity IDE không có CLI headless nên Claude Code không thể gọi trực
-tiếp. Thay vì copy-paste kế hoạch/kết quả qua chat, dùng giao thức
-file trong `.gemini/antigravity/handoff/`: Claude ghi kế hoạch vào
-`handoff/inbox/<slug>-plan.md`, bạn chỉ cần chuyển 1 dòng cho Antigravity
-("đọc plan này, ghi report vào `handoff/outbox/<slug>-report.md`"), và
-`.claude/hooks/session_start.py` sẽ tự phát hiện report mới ở phiên Claude
-kế tiếp. Chi tiết: `.gemini/antigravity/handoff/README.md`.
+Antigravity chạy headless qua `tools/antigravity_delegate.py`, wrapper của
+`agy.exe --print --output-format stream-json`. Mặc định read-only; muốn ghi phải
+có cả `--auto-approve` và `--allow-dir`, wrapper lấy directory lock và audit
+scope sau khi chạy. Run read-only thường không trả lời được prompt quyền
+`command`, nên truyền `--allow-tools` khi cần chạy grep/test; khi đó wrapper fail
+rõ ràng (exit 5) nếu tool bị auto-deny thay vì báo "thành công" giả.
+
+Chọn model theo độ phức tạp — `gemini-3.8-flash-low|medium|high`. Kiểm tra binary
+và model bằng `python tools/antigravity_probe.py`.
+
+Giao thức GUI inbox/outbox trong `.gemini/antigravity/handoff/` vẫn là dự phòng
+khi cần người xác minh UI đã render: Claude ghi plan vào
+`handoff/inbox/<slug>-plan.md`, bạn chuyển 1 dòng cho Antigravity, và
+`.claude/hooks/session_start.py` tự phát hiện report ở phiên Claude kế tiếp.
+Chi tiết: `.gemini/antigravity/handoff/README.md`.
 
 ### Giao việc cho ai
 
@@ -491,18 +513,23 @@ mỗi phiên.
 
 | Dạng công việc | Giao cho | Lý do |
 |---|---|---|
-| Đọc >5 file rồi tóm tắt/so sánh/rà soát | **Gemini** | Đòn bẩy ngữ cảnh ~20x (đã đo) |
-| Khảo sát toàn repo — "chỗ nào khác dùng X?" | **Gemini** | Bề rộng là thế mạnh của nó |
-| Review độc lập một thiết kế hoặc diff | **Gemini** | Model khác bắt được lỗi khác |
-| Kiểm chứng UI, chụp màn hình, quay video | **Gemini** | Claude Code hoàn toàn không làm được |
+| Đọc >5 file rồi tóm tắt/so sánh/rà soát | **Antigravity CLI** | Ngữ cảnh lớn qua worker headless |
+| Khảo sát toàn repo — "chỗ nào khác dùng X?" | **Antigravity CLI** | Bề rộng là thế mạnh của nó |
+| Review độc lập một thiết kế hoặc diff | **Antigravity CLI** | Model khác bắt được lỗi khác |
+| Kiểm chứng UI, chụp màn hình, quay video | **Antigravity GUI handoff** | CLI không kiểm được UI đã render |
 | Sửa cơ học nhỏ, boilerplate, một test | **OpenCode CLI** | Headless — không tốn công bạn |
+| Viết code có scope rõ ràng | **Antigravity CLI** (rộng) / **OpenCode CLI** (hẹp) | Cả hai đều cần fence bằng văn bản |
 | Quyết định kiến trúc / sản phẩm / bảo mật | **Không giao** | Phán đoán không ủy quyền được |
-| Việc cần lịch sử hội thoại của phiên | **Không giao** | Cả hai worker đều mù ngữ cảnh |
+| Việc cần lịch sử hội thoại của phiên | **Không giao** | Worker đều mù ngữ cảnh |
 
-OpenCode CLI và Kilo CLI đều chạy headless nên Claude ủy quyền trực tiếp. OpenCode CLI là executor chính (chiều sâu suy luận + cache tracking); Kilo CLI là dự phòng. Gemini cần bạn chuyển đề bài qua
-IDE nên Claude sẽ hỏi trước.
+OpenCode CLI, Kilo CLI và Antigravity CLI đều chạy headless nên Claude ủy quyền
+trực tiếp. Antigravity CLI lo việc đọc nhiều/bề rộng; OpenCode CLI là executor
+hẹp (chiều sâu suy luận + cache tracking); Kilo CLI là dự phòng. GUI handoff chỉ
+còn cho việc UI đã render. Routing này **không ép cứng được** — không hook nào
+chặn việc đọc nhiều file trực tiếp — nên nó là chính sách + nhắc nhở ở session
+start, không phải gate.
 
-**Mọi kết quả từ cả hai worker đều được kiểm chứng.** Trong các bài test có
+**Mọi kết quả từ mọi worker đều được kiểm chứng.** Trong các bài test có
 kiểm soát, mỗi bên đều trả về ít nhất một lỗi mà chính bản tóm tắt của nó
 không hề lộ ra — một phát hiện sai bị đánh dấu "Confident: Yes", và hai
 false positive kèm câu "không có gì không chắc". Bằng chứng nó đưa ra thì
