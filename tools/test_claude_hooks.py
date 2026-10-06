@@ -230,6 +230,13 @@ def test_gemini_available_true_via_default_install_dir(monkeypatch, tmp_path):
     assert mod._gemini_available(tmp_path) is True
 
 
+def test_antigravity_headless_available_via_path(monkeypatch):
+    mod = _load_session_start()
+    monkeypatch.setattr(mod.shutil, "which", lambda name: "C:/bin/agy.exe" if name == "agy" else None)
+
+    assert mod._antigravity_headless_available() is True
+
+
 def test_session_start_gemini_mention_points_to_agents_md():
     """Like Kilo CLI, an availability claim must carry a pointer to the how-to,
     never advertise a capability the reader cannot look up."""
