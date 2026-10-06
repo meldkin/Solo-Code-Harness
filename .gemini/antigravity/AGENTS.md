@@ -177,6 +177,17 @@ human relay. Check `.gemini/antigravity/handoff/inbox/` for `*-plan.md` files
 with `status: pending` in the frontmatter — these are tasks Claude Code
 delegated to you. Full protocol: `.gemini/antigravity/handoff/README.md`.
 
+### Authentication and quota
+
+`agy` stores a token profile in the OS keyring and signs in silently; there is
+no per-run account flag. Switch account with `/logout` then sign in again, and
+check remaining quota with `/usage` (alias `/quota`). A Gemini API key
+(`modelProvider: "gemini"` + `GEMINI_API_KEY` in
+`~/.gemini/antigravity-cli/settings.json`) is the documented headless
+alternative. Command allowlists go in the same file under `permissions.allow`
+(e.g. `command(python tools/garden.py)`). Docs:
+https://antigravity.google/docs/cli/install/
+
 When given a plan file to execute:
 1. Read the full plan file (`Task`, `Context`, `Expected report format` sections).
 2. Do the work.

@@ -80,8 +80,8 @@ exits **5** and an empty-output run exits **2**, never a silent success. Use
 `--allow-tools` for read/execute work without granting a write scope (no
 directory lock, no scope audit); it is mutually exclusive with `--auto-approve`,
 `--allow-dir`, and `--no-guardrail`. For a least-privilege alternative, add a
-`permissions.allow` rule in agy's own `settings.json` (e.g.
-`command(python tools/garden.py)`).
+`permissions.allow` rule in `~/.gemini/antigravity-cli/settings.json` (e.g.
+`"allow": ["command(python tools/garden.py)"]`) — see the auth section below.
 
 ### Choose the model by task complexity
 
@@ -94,14 +94,42 @@ draw the same account quota, so spend the cheapest level that fits:
 | Medium (default) | `gemini-3.8-flash-medium` | Multi-file summarize/compare, scoped refactor |
 | High | `gemini-3.8-flash-high` | Independent design review, subtle bug hunt |
 
-### Quota exhaustion and manual account rotation
+### Authentication, quota, and account rotation
 
-`agy.exe` authenticates with the machine-level Antigravity Google account, and
-there is **no per-run account flag** — one account at a time. When the account
-exhausts Gemini quota, delegated runs fail until the user signs into another
-account in the Antigravity IDE and re-auths; the CLI inherits the new session on
-the next run. Since rotation is manual and serial, do not start an unattended
-batch you expect to cross a quota boundary.
+Per the [Antigravity CLI auth docs](https://antigravity.google/docs/cli/install/),
+`agy` stores a **token profile in the OS keyring** (Windows Credential Manager)
+and signs in silently when one exists; otherwise it opens a browser OAuth flow.
+There is **no per-run account flag**, so exactly one account is active at a time.
+
+- **Switch account:** run `/logout` in the CLI (purges the keyring profile), then
+  start `agy` again and sign in with the other account. The wrapper inherits the
+  active profile on its next run.
+- **Check quota:** `/usage` (alias `/quota`) — a TUI panel only; there is no CLI
+  flag for it.
+- Plan-quota exhaustion makes delegated runs fail. Rotation is manual and serial,
+  so do not start an unattended batch that will cross a quota boundary.
+
+**Headless alternative — Gemini API key.** For unattended/CI runs, set
+`modelProvider` to `gemini` in `~/.gemini/antigravity-cli/settings.json` and
+export `GEMINI_API_KEY`. The CLI reads only that variable (`GOOGLE_API_KEY` and
+`.env` are ignored), and `/logout` has no effect in this mode. Point at a custom
+endpoint with `GOOGLE_GEMINI_BASE_URL`. This bills the API key instead of the plan
+quota — the documented answer when no browser is available.
+
+**Other `settings.json` keys that matter** (`~/.gemini/antigravity-cli/settings.json`):
+
+- `"permissions": {"allow": ["command(git)"], "deny": ["command(rm -rf)"]}` —
+  fine-grained command allow/deny; the least-privilege alternative to
+  `--allow-tools`.
+- `toolPermission`: `request-review` (default), `proceed-in-sandbox`,
+  `always-proceed`, `strict`. Prefer the wrapper's per-run `--allow-tools` over
+  the global `always-proceed`.
+- `useG1Credits` (external builds): spend personal AI credits once plan quota is
+  exhausted.
+- `enableTerminalSandbox` (default `false`): OS containment (`AppContainer` on
+  Windows) for agent shell commands. `agy --sandbox` enables it per run.
+- `allowNonWorkspaceAccess` (default `false`): leave false; the wrapper's
+  `--add-dir` is the workspace fence.
 
 The wrapper prints the `conversation=<id>` line on every run. Resume an
 interrupted task after re-auth with:

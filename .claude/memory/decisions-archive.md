@@ -410,3 +410,18 @@ created: 2026-07-24
   .solocode/shared-state.db (session_log + locks; writers pre_compact.py,
   codex_session.py) vs .solocode/sessions.db (session lifecycle/analytics;
   Claude hooks). Moved here 2026-10-06 to keep MEMORY.md under the 8,000-char gate.
+
+- [decision] 2026-10-06: Antigravity CLI (agy.exe) auth and settings, from the
+  official docs (antigravity.google/docs/cli/install, /reference, /features).
+  The CLI stores a token profile in the OS keyring (Windows Credential Manager)
+  and signs in silently; with none it opens a browser OAuth flow. There is no
+  per-run account flag. `/logout` (TUI) purges the keyring profile; `/usage`
+  (alias `/quota`) shows quota but is TUI-only. Headless/CI alternative: set
+  `modelProvider: "gemini"` in `~/.gemini/antigravity-cli/settings.json` and
+  export `GEMINI_API_KEY` (only that var; `GOOGLE_API_KEY` and `.env` are
+  ignored); custom endpoint via `GOOGLE_GEMINI_BASE_URL`; `/logout` is a no-op
+  there. Other settings keys: `permissions.allow`/`deny` (e.g. `command(git)`),
+  `toolPermission` (default request-review), `useG1Credits` (external builds),
+  `enableTerminalSandbox` (default false; AppContainer on Windows),
+  `allowNonWorkspaceAccess` (default false). Plugins stage under
+  `~/.gemini/antigravity-cli/plugins/<name>/` (plugin.json + skills/agents/rules/hooks).

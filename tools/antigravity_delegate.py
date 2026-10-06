@@ -8,6 +8,7 @@ Writes require both ``--auto-approve`` and an explicit ``--allow-dir`` scope.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -42,6 +43,21 @@ GUARDRAIL = """STRICT OPERATING CONSTRAINTS (must follow, no exceptions):
 
 def _stderr(message: str) -> None:
     print(f"[antigravity_delegate] {message}", file=sys.stderr)
+
+
+def _make_streams_encoding_safe() -> None:
+    """Never crash on worker output the console encoding cannot represent.
+
+    agy frequently returns non-Latin characters (arrows, em-dashes, box drawing);
+    printing those to a cp1252 console on Windows raises UnicodeEncodeError and
+    would discard the whole result. Keep the console's encoding, only relax errors.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        with contextlib.suppress(ValueError, OSError):
+            reconfigure(errors="replace")
 
 
 def find_agy_binary() -> str | None:
@@ -277,6 +293,7 @@ def run_agy_cli(
 
 
 def main(argv: list[str] | None = None) -> int:
+    _make_streams_encoding_safe()
     parser = argparse.ArgumentParser(description="Antigravity headless delegation wrapper")
     parser.add_argument("prompt", help="Self-contained task for the worker")
     parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Model ID (default: {DEFAULT_MODEL})")

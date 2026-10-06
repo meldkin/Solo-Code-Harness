@@ -32,6 +32,7 @@ Or will auto-find Kilo binary and use --attach to default server.
 """
 
 import argparse
+import contextlib
 import json
 import shutil
 import subprocess
@@ -74,6 +75,21 @@ Your permission scope was frozen when this task was created and cannot be expand
 def _stderr(msg: str) -> None:
     """Print to stderr with [kilo_cli_delegate] prefix."""
     print(f"[kilo_cli_delegate] {msg}", file=sys.stderr)
+
+
+def _make_streams_encoding_safe() -> None:
+    """Never crash on worker output the console encoding cannot represent.
+
+    A worker can return non-Latin characters (arrows, em-dashes, box drawing);
+    printing those to a cp1252 console on Windows raises UnicodeEncodeError and
+    would discard the whole result. Keep the console's encoding, only relax errors.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        with contextlib.suppress(ValueError, OSError):
+            reconfigure(errors="replace")
 
 
 # A Windows npm install puts `kilo.cmd` on PATH. Running it via subprocess
@@ -292,6 +308,7 @@ def log_usage(
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 def main(argv: list[str] | None = None) -> int:
+    _make_streams_encoding_safe()
     parser = argparse.ArgumentParser(
         description="Kilo CLI delegation wrapper",
         formatter_class=argparse.RawDescriptionHelpFormatter,

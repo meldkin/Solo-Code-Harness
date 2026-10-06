@@ -61,9 +61,10 @@ High-signal context loaded at session start. Detailed history belongs in
   post-run scope audit. Model is chosen by task complexity via the distinct ids
   `gemini-3.8-flash-{low,medium,high}`. Quota rotation is manual: `agy.exe`
   uses the machine-level Antigravity Google account and has no per-run account
-  flag, so exhausting quota means signing into another account in the IDE; the
-  wrapper prints `conversation=<id>` and resume uses `--conversation <id>` or
-  `--continue-latest`.
+  flag; switch account with `/logout` then re-sign-in, check quota with `/usage`,
+  and resume with `--conversation <id>` or `--continue-latest`. A Gemini API key
+  (`modelProvider: "gemini"` + `GEMINI_API_KEY`) is the headless alternative.
+  Auth/settings details and doc links are in `decisions-archive.md`.
 - [decision] Antigravity headless permission behavior (measured 2026-10-06 on
   `agy.exe` 1.2.9): a plain read-only run cannot answer the `command` permission
   prompt, so `run_command` is auto-denied while `result.status` still says

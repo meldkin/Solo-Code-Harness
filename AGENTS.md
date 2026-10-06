@@ -316,14 +316,16 @@ cheapest one that fits the task is the right one:
 | Default multi-file work | `gemini-3.8-flash-medium` | Summarize 10 files, apply a scoped refactor |
 | Hard reasoning, design-adjacent | `gemini-3.8-flash-high` | Independent design review, subtle bug hunt |
 
-**Account quota and manual rotation.** The worker authenticates with the
-machine-level Antigravity Google account and there is **no per-run account
-flag**. When that account exhausts Gemini quota, delegated runs fail until the
-user signs into a different account in the Antigravity IDE and re-auths; the
-CLI then inherits the new session. Resume an interrupted task with
-`--conversation <id>` (the wrapper prints the id) or `--continue-latest`.
-Rotation is serial, so do not queue unattended long batches across a quota
-boundary.
+**Account quota and rotation.** `agy` keeps a token profile in the OS keyring
+(Windows Credential Manager) and has **no per-run account flag**. Switch account
+with `/logout` in the CLI then sign in again; check remaining quota with
+`/usage`. Resume an interrupted task with `--conversation <id>` (the wrapper
+prints the id) or `--continue-latest`. For unattended runs, a Gemini API key is
+the documented headless alternative (`modelProvider: "gemini"` + `GEMINI_API_KEY`
+in `~/.gemini/antigravity-cli/settings.json`); least-privilege command allowlists
+go in the same file under `permissions.allow`. Rotation is serial, so do not
+queue unattended long batches across a quota boundary. Details:
+`.kilo/skill/gemini-delegation/SKILL.md`.
 
 The orchestrator must still inspect `git diff` and run the relevant tests,
 security scan, and checklist. Never use `--no-guardrail` with `--auto-approve`.
