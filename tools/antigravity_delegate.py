@@ -338,12 +338,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    if args.allow_dir and not args.auto_approve:
+        parser.error("--allow-dir requires --auto-approve")
     if args.auto_approve and not args.allow_dir:
         parser.error("--auto-approve requires --allow-dir")
     if args.allow_tools and args.auto_approve:
         parser.error("--allow-tools and --auto-approve are mutually exclusive")
-    if args.allow_tools and args.allow_dir:
-        parser.error("--allow-dir requires --auto-approve")
     if args.allow_tools and args.no_guardrail:
         parser.error("--no-guardrail cannot be combined with --allow-tools")
     if args.auto_approve and args.no_guardrail:

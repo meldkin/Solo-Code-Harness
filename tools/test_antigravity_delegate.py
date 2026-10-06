@@ -440,6 +440,13 @@ def test_main_rejects_allow_dir_without_auto_approve(tmp_path):
         antigravity_delegate.main(["task", "--target-dir", str(tmp_path), "--allow-tools", "--allow-dir", "src"])
 
 
+def test_main_rejects_bare_allow_dir_without_auto_approve(tmp_path):
+    """--allow-dir alone is a no-op write scope; it must be rejected, not ignored."""
+    (tmp_path / "src").mkdir()
+    with pytest.raises(SystemExit):
+        antigravity_delegate.main(["task", "--target-dir", str(tmp_path), "--allow-dir", "src"])
+
+
 def test_make_streams_encoding_safe_relaxes_errors(monkeypatch):
     calls: dict[str, object] = {}
 
