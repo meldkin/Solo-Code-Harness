@@ -463,3 +463,17 @@ def test_make_streams_encoding_safe_tolerates_missing_reconfigure(monkeypatch):
     monkeypatch.setattr(antigravity_delegate.sys, "stderr", Bare())
 
     antigravity_delegate._make_streams_encoding_safe()
+
+
+def test_looks_like_quota_error_matches_markers():
+    assert antigravity_delegate._looks_like_quota_error("RESOURCE_EXHAUSTED: quota exceeded")
+    assert antigravity_delegate._looks_like_quota_error("429 Too Many Requests")
+    assert antigravity_delegate._looks_like_quota_error("You have hit the rate limit")
+    assert not antigravity_delegate._looks_like_quota_error("file not found")
+
+
+def test_main_reports_quota_exhaustion_as_exit_six(monkeypatch, tmp_path):
+    ws, _ = _wire_main(monkeypatch, tmp_path)
+    result = ({"text": "", "error": "RESOURCE_EXHAUSTED: quota exceeded", "stderr": ""}, 2)
+
+    assert _run_main(monkeypatch, ws, result) == 6

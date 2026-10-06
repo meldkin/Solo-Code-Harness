@@ -76,7 +76,8 @@ python tools/antigravity_delegate.py "<task>" --allow-dir src --auto-approve --m
 A plain read-only run cannot answer the `command` permission prompt headless, so
 `run_command` is auto-denied and agy still returns `status: SUCCESS`. The wrapper
 therefore inspects `denied_actions` and per-tool `ERROR` events: a denied run
-exits **5** and an empty-output run exits **2**, never a silent success. Use
+exits **5**, an empty-output run exits **2**, and an error that looks like an
+exhausted quota exits **6** (see the auth section), never a silent success. Use
 `--allow-tools` for read/execute work without granting a write scope (no
 directory lock, no scope audit); it is mutually exclusive with `--auto-approve`,
 `--allow-dir`, and `--no-guardrail`. For a least-privilege alternative, add a

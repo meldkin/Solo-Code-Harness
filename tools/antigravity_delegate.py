@@ -60,6 +60,27 @@ def _make_streams_encoding_safe() -> None:
             reconfigure(errors="replace")
 
 
+# Best-effort markers for an exhausted account quota. The exact wording is not
+# documented, so this is a heuristic: it decides whether to tell the user to
+# rotate the account rather than report a generic failure.
+QUOTA_MARKERS = (
+    "quota",
+    "rate limit",
+    "rate-limit",
+    "resource exhausted",
+    "resource_exhausted",
+    "resourceexhausted",
+    "too many requests",
+    "429",
+)
+
+
+def _looks_like_quota_error(text: str) -> bool:
+    """Best-effort: does this error text look like an exhausted Gemini quota?"""
+    lowered = text.lower()
+    return any(marker in lowered for marker in QUOTA_MARKERS)
+
+
 def find_agy_binary() -> str | None:
     """Find agy.exe through PATH, then its standard Windows install location."""
     on_path = shutil.which("agy")
@@ -285,6 +306,7 @@ def run_agy_cli(
         return {"text": "", "error": str(exc)}, 1
 
     parsed = parse_ndjson_events(process.stdout)
+    parsed["stderr"] = process.stderr or ""
     if process.returncode != 0:
         parsed["error"] = parsed.get("error") or f"agy exited with code {process.returncode}"
         if process.stderr:
@@ -399,6 +421,15 @@ def main(argv: list[str] | None = None) -> int:
                 "read/execute tools, or add a permissions.allow rule in agy settings.json."
             )
             return exit_code if exit_code == 124 else 5
+        if result.get("error") and _looks_like_quota_error(
+            f"{result['error']}\n{result.get('stderr', '')}"
+        ):
+            _stderr(
+                "worker appears to be out of Gemini quota. In the Antigravity CLI run "
+                "`/usage` to confirm, then `/logout` and sign in with another account; "
+                "resume this task with --conversation <id>."
+            )
+            return exit_code if exit_code == 124 else 6
         if result.get("error"):
             _stderr(str(result["error"]))
             return exit_code if exit_code == 124 else 2
